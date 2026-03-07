@@ -57,18 +57,39 @@ module id_ex_register (
     // Mul-div signals
     input md_type,
     input [2:0] md_operation,
+    // FPU signals
+    input fpu_en, f_reg_write, f_mem_to_reg, f_mem_write, f_to_x, x_to_f,
+    input [4:0] fpu_operation,
+    input [31:0] read_f_data1, read_f_data2, read_f_data3,
+    input [4:0] rs3,
+    // Outputs
     output reg [11:0] id_ex_pc_plus_4, id_ex_pc_in,
     output reg [2:0] id_ex_funct3,
     output reg [31:0] id_ex_read_data1, id_ex_read_data2, id_ex_ext_imm, id_ex_instr,
     output reg [4:0] id_ex_rs1, id_ex_rs2, id_ex_rd,
-    output reg id_ex_reg_write, id_ex_alu_src, id_ex_mem_write, id_ex_mem_read, id_ex_mem_to_reg, id_ex_branch, id_ex_jal, id_ex_jalr, id_ex_lui, id_ex_auipc, id_ex_mem_unsigned,
+    output reg id_ex_reg_write, id_ex_alu_src, id_ex_mem_write, id_ex_mem_read, 
+    output reg id_ex_mem_to_reg, id_ex_branch, id_ex_jal, id_ex_jalr, 
+    output reg id_ex_lui, id_ex_auipc, id_ex_mem_unsigned,
     output reg [1:0] id_ex_mem_size,
     output reg [3:0] id_ex_alu_ctrl,
     output reg [11:0] id_ex_branch_target, id_ex_jal_target,
     output reg id_ex_predict_taken, id_ex_btb_hit, id_ex_ecall, id_ex_ebreak, id_ex_mret,
     output reg [11:0] id_ex_csr_addr, output reg [1:0] id_ex_csr_op, output reg id_ex_csr_we,
+    // Mul-div outputs
     output reg id_ex_md_type,
-    output reg [2:0] id_ex_md_operation
+    output reg [2:0] id_ex_md_operation,
+    // FPU outputs
+    output reg id_ex_fpu_en,
+    output reg id_ex_f_reg_write,
+    output reg id_ex_f_mem_to_reg,
+    output reg id_ex_f_mem_write,
+    output reg id_ex_f_to_x,
+    output reg id_ex_x_to_f,
+    output reg [4:0] id_ex_fpu_operation,
+    output reg [31:0] id_ex_read_f_data1,
+    output reg [31:0] id_ex_read_f_data2,
+    output reg [31:0] id_ex_read_f_data3,
+    output reg [4:0] id_ex_rs3
 );
     always @(posedge clk) begin
         if (reset) begin
@@ -107,8 +128,19 @@ module id_ex_register (
             id_ex_csr_we <= 0;
             id_ex_md_type <= 0;
             id_ex_md_operation <= 0;
+            // FPU
+            id_ex_fpu_en <= 0;
+            id_ex_f_reg_write <= 0;
+            id_ex_f_mem_to_reg <= 0;
+            id_ex_f_mem_write <= 0;
+            id_ex_f_to_x <= 0;
+            id_ex_x_to_f <= 0;
+            id_ex_fpu_operation <= 0;
+            id_ex_read_f_data1 <= 0;
+            id_ex_read_f_data2 <= 0;
+            id_ex_read_f_data3 <= 0;
+            id_ex_rs3 <= 0;
         end 
-        
         else if (riscv_start && !riscv_done) begin
             if (flush) begin
                 id_ex_reg_write <= 0;
@@ -129,12 +161,17 @@ module id_ex_register (
                 id_ex_csr_we <= 0;
                 id_ex_md_type <= 0;
                 id_ex_md_operation <= 0;
+                // FPU
+                id_ex_fpu_en <= 0;
+                id_ex_f_reg_write <= 0;
+                id_ex_f_mem_to_reg <= 0;
+                id_ex_f_mem_write <= 0;
+                id_ex_f_to_x <= 0;
+                id_ex_x_to_f <= 0;
             end  
-
             else if (dcache_stall || md_alu_stall) begin
-
+                // Hold
             end  
-            
             else if (load_use_stall) begin
                 id_ex_reg_write <= 0;
                 id_ex_mem_write <= 0;
@@ -151,8 +188,14 @@ module id_ex_register (
                 id_ex_csr_we <= 0;
                 id_ex_md_type <= 0;
                 id_ex_md_operation <= 0;
+                // FPU
+                id_ex_fpu_en <= 0;
+                id_ex_f_reg_write <= 0;
+                id_ex_f_mem_to_reg <= 0;
+                id_ex_f_mem_write <= 0;
+                id_ex_f_to_x <= 0;
+                id_ex_x_to_f <= 0;
             end
-            
             else begin
                 id_ex_pc_plus_4 <= if_id_pc_plus_4;
                 id_ex_pc_in <= if_id_pc_in;
@@ -189,6 +232,18 @@ module id_ex_register (
                 id_ex_csr_we <= csr_we;
                 id_ex_md_type <= md_type;
                 id_ex_md_operation <= md_operation;
+                // FPU
+                id_ex_fpu_en <= fpu_en;
+                id_ex_f_reg_write <= f_reg_write;
+                id_ex_f_mem_to_reg <= f_mem_to_reg;
+                id_ex_f_mem_write <= f_mem_write;
+                id_ex_f_to_x <= f_to_x;
+                id_ex_x_to_f <= x_to_f;
+                id_ex_fpu_operation <= fpu_operation;
+                id_ex_read_f_data1 <= read_f_data1;
+                id_ex_read_f_data2 <= read_f_data2;
+                id_ex_read_f_data3 <= read_f_data3;
+                id_ex_rs3 <= rs3;
             end
         end
     end
@@ -200,20 +255,37 @@ module ex_mem_register (
     input [31:0] alu_result, id_ex_ext_imm, id_ex_instr,
     input [11:0] id_ex_branch_target, id_ex_pc_plus_4, id_ex_pc_in,
     input [4:0] id_ex_rd,
-    input id_ex_mem_write, id_ex_mem_read, id_ex_mem_to_reg, id_ex_reg_write, id_ex_branch, branch_taken, id_ex_jal, id_ex_mem_unsigned,
+    input id_ex_mem_write, id_ex_mem_read, id_ex_mem_to_reg, id_ex_reg_write, 
+    input id_ex_branch, branch_taken, id_ex_jal, id_ex_mem_unsigned,
     input [1:0] id_ex_mem_size,
     input [31:0] id_ex_read_data2,
     input [31:0] mem_write_data,
-    input id_ex_predict_taken, id_ex_btb_hit, id_ex_ecall,  id_ex_ebreak, id_ex_mret,
-    input [11:0] id_ex_csr_addr, input [1:0] id_ex_csr_op, input id_ex_csr_we, input [31:0] csr_write_data_in,
+    input id_ex_predict_taken, id_ex_btb_hit, id_ex_ecall, id_ex_ebreak, id_ex_mret,
+    input [11:0] id_ex_csr_addr, input [1:0] id_ex_csr_op, input id_ex_csr_we, 
+    input [31:0] csr_write_data_in,
+    // FPU signals
+    input [31:0] fpu_result,
+    input [31:0] id_ex_read_f_data2,
+    input id_ex_f_reg_write,
+    input id_ex_f_mem_to_reg,
+    input id_ex_f_mem_write,
+    // Outputs
     output reg [31:0] ex_mem_alu_result, ex_mem_instr,
     output reg [4:0] ex_mem_rd,
     output reg [11:0] ex_mem_branch_target, ex_mem_pc_plus_4, ex_mem_pc_in,
-    output reg ex_mem_mem_write, ex_mem_mem_read, ex_mem_mem_to_reg, ex_mem_reg_write, ex_mem_branch, ex_mem_branch_taken, ex_mem_jal, ex_mem_mem_unsigned,
+    output reg ex_mem_mem_write, ex_mem_mem_read, ex_mem_mem_to_reg, ex_mem_reg_write, 
+    output reg ex_mem_branch, ex_mem_branch_taken, ex_mem_jal, ex_mem_mem_unsigned,
     output reg [1:0] ex_mem_mem_size,
     output reg [31:0] ex_mem_mem_write_data,
     output reg ex_mem_predict_taken, ex_mem_btb_hit, ex_mem_ecall, ex_mem_ebreak, ex_mem_mret,
-    output reg [11:0] ex_mem_csr_addr, output reg [1:0] ex_mem_csr_op, output reg ex_mem_csr_we, output reg [31:0] ex_mem_csr_write_data
+    output reg [11:0] ex_mem_csr_addr, output reg [1:0] ex_mem_csr_op, 
+    output reg ex_mem_csr_we, output reg [31:0] ex_mem_csr_write_data,
+    // FPU outputs
+    output reg [31:0] ex_mem_fpu_result,
+    output reg [31:0] ex_mem_f_store_data,
+    output reg ex_mem_f_reg_write,
+    output reg ex_mem_f_mem_to_reg,
+    output reg ex_mem_f_mem_write
 );
     always @(posedge clk) begin
         if (reset) begin
@@ -242,8 +314,13 @@ module ex_mem_register (
             ex_mem_csr_op <= 0; 
             ex_mem_csr_we <= 0; 
             ex_mem_csr_write_data <= 0;
+            // FPU
+            ex_mem_fpu_result <= 0;
+            ex_mem_f_store_data <= 0;
+            ex_mem_f_reg_write <= 0;
+            ex_mem_f_mem_to_reg <= 0;
+            ex_mem_f_mem_write <= 0;
         end 
-        
         else if (riscv_start && !riscv_done) begin
             if (flush) begin
                 ex_mem_reg_write <= 0;
@@ -259,12 +336,14 @@ module ex_mem_register (
                 ex_mem_ebreak <= 0; 
                 ex_mem_mret <= 0; 
                 ex_mem_csr_we <= 0;
+                // FPU
+                ex_mem_f_reg_write <= 0;
+                ex_mem_f_mem_write <= 0;
+                ex_mem_f_mem_to_reg <= 0;
             end
-            
             else if (dcache_stall || md_alu_stall) begin
-
+                // Hold
             end
-
             else begin
                 ex_mem_alu_result <= alu_result;
                 ex_mem_rd <= id_ex_rd;
@@ -291,6 +370,12 @@ module ex_mem_register (
                 ex_mem_csr_op <= id_ex_csr_op; 
                 ex_mem_csr_we <= id_ex_csr_we; 
                 ex_mem_csr_write_data <= csr_write_data_in;
+                // FPU
+                ex_mem_fpu_result <= fpu_result;
+                ex_mem_f_store_data <= id_ex_read_f_data2;
+                ex_mem_f_reg_write <= id_ex_f_reg_write;
+                ex_mem_f_mem_to_reg <= id_ex_f_mem_to_reg;
+                ex_mem_f_mem_write <= id_ex_f_mem_write;
             end
         end
     end
@@ -305,12 +390,21 @@ module mem_wb_register (
     input [31:0] ex_mem_alu_result,
     input [4:0] ex_mem_rd,
     input ex_mem_ecall,
+    // FPU signals
+    input [31:0] ex_mem_fpu_result,
+    input ex_mem_f_reg_write,
+    input ex_mem_f_mem_to_reg,
+    // Outputs
     output reg [31:0] mem_wb_mem_read_data,
     output reg [11:0] mem_wb_pc_plus_4,
     output reg mem_wb_mem_to_reg, mem_wb_reg_write, mem_wb_jal,
     output reg [31:0] mem_wb_alu_result,
     output reg [4:0] mem_wb_rd,
-    output reg mem_wb_ecall
+    output reg mem_wb_ecall,
+    // FPU outputs
+    output reg [31:0] mem_wb_fpu_result,
+    output reg mem_wb_f_reg_write,
+    output reg mem_wb_f_mem_to_reg
 );
     always @(posedge clk) begin
         if (reset) begin
@@ -322,13 +416,15 @@ module mem_wb_register (
             mem_wb_pc_plus_4 <= 0;
             mem_wb_jal <= 0;
             mem_wb_ecall <= 0;
+            // FPU
+            mem_wb_fpu_result <= 0;
+            mem_wb_f_reg_write <= 0;
+            mem_wb_f_mem_to_reg <= 0;
         end 
-        
         else if (riscv_start && !riscv_done) begin
             if (dcache_stall) begin
-
+                // Hold
             end 
-            
             else begin
                 mem_wb_mem_read_data <= mem_read_data;
                 mem_wb_pc_plus_4 <= ex_mem_pc_plus_4;
@@ -338,6 +434,10 @@ module mem_wb_register (
                 mem_wb_reg_write <= ex_mem_reg_write;
                 mem_wb_jal <= ex_mem_jal;
                 mem_wb_ecall <= ex_mem_ecall;
+                // FPU
+                mem_wb_fpu_result <= ex_mem_fpu_result;
+                mem_wb_f_reg_write <= ex_mem_f_reg_write;
+                mem_wb_f_mem_to_reg <= ex_mem_f_mem_to_reg;
             end
         end
     end    

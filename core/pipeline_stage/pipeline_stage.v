@@ -74,7 +74,7 @@ module instruction_decode (
     input [11:0] if_id_pc_in,
     input [31:0] if_id_instr,
     output [31:0] ext_imm, 
-    output reg [4:0] rs1, rs2, rd,
+    output reg [4:0] rs1, rs2, rd, rs3,
     output reg [2:0] funct3,
     output reg [6:0] opcode, funct7,
     output [11:0] jal_target, branch_target,
@@ -87,7 +87,15 @@ module instruction_decode (
     output ecall, ebreak, mret,
     output [11:0] csr_addr,
     output [1:0] csr_op,
-    output csr_we
+    output csr_we,
+    // FPU signals
+    output fpu_en,
+    output f_reg_write,
+    output f_mem_to_reg,
+    output f_mem_write,
+    output f_to_x,
+    output x_to_f,
+    output [4:0] fpu_operation
 );
     reg [19:0] u_imm = 0;
     reg [11:0] i_imm = 0;
@@ -102,6 +110,7 @@ module instruction_decode (
         rs1 = if_id_instr[19:15];
         rs2 = if_id_instr[24:20];
         rd = if_id_instr[11:7];
+        rs3 = if_id_instr[31:27];
         u_imm = if_id_instr[31:12];
         i_imm = if_id_instr[31:20];
         s_imm = {if_id_instr[31:25], if_id_instr[11:7]};
@@ -119,8 +128,8 @@ module instruction_decode (
     wire [31:0] j_imm_ext = {{11{j_imm[19]}}, j_imm, 1'b0};
     
     assign ext_imm = (opcode == 7'b0110111 || opcode == 7'b0010111) ? u_imm_ext : // LUI, AUIPC
-                     (opcode == 7'b0000011 || opcode == 7'b0010011 || opcode == 7'b1100111) ? i_imm_ext : // Load, I-type ALU, JALR
-                     (opcode == 7'b0100011) ? s_imm_ext : // Store
+                     (opcode == 7'b0000011 || opcode == 7'b0010011 || opcode == 7'b1100111 || opcode == 7'b0000111) ? i_imm_ext : // Load, I-type ALU, JALR, FLW
+                     (opcode == 7'b0100011 || opcode == 7'b0100111) ? s_imm_ext : // Store, FSW
                      (opcode == 7'b1100011) ? b_imm_ext : // Branch
                      (opcode == 7'b1101111) ? j_imm_ext : // JAL
                      32'b0;
@@ -148,6 +157,7 @@ module instruction_decode (
         .opcode(opcode),
         .funct7(funct7),
         .funct3(funct3),
+        .rs2(rs2),
         .reg_write(reg_write),
         .alu_src(alu_src),
         .mem_write(mem_write),
@@ -161,7 +171,14 @@ module instruction_decode (
         .mem_unsigned(mem_unsigned),
         .alu_op(alu_op),
         .mem_size(mem_size),
-        .md_operation(md_operation)
+        .md_operation(md_operation),
+        .fpu_en(fpu_en),
+        .f_reg_write(f_reg_write),
+        .f_mem_to_reg(f_mem_to_reg),
+        .f_mem_write(f_mem_write),
+        .f_to_x(f_to_x),
+        .x_to_f(x_to_f),
+        .fpu_operation(fpu_operation)
     );
     
     alu_control_unit ACU (
@@ -187,14 +204,31 @@ module execute (
     input id_ex_csr_we,
     input [31:0] csr_read_data,
     input [4:0] id_ex_rs1,
+    // FPU signals
+    input id_ex_fpu_en,
+    input [4:0] id_ex_fpu_operation,
+    input [31:0] id_ex_read_f_data1,
+    input [31:0] id_ex_read_f_data2,
+    input [31:0] id_ex_read_f_data3,
+    input id_ex_f_to_x,
+    input id_ex_x_to_f,
+    // Outputs
     output reg [31:0] alu_result,
     output reg branch_taken,
     output reg [31:0] csr_write_data,
-    output md_alu_stall
+    output md_alu_stall,
+    output [31:0] fpu_result_out
 );  
     // Mul-div signals
     wire [31:0] mul_result, div_result;
     wire mul_alu_done, div_alu_done, mul_alu_stall, div_alu_stall;
+
+    // FPU signals
+    wire fpu_stall, fpu_done;
+    wire [31:0] fpu_result;
+    
+    // Select operand for FPU (from integer or float reg)
+    wire [31:0] fpu_operand_a = id_ex_x_to_f ? alu_in1 : id_ex_read_f_data1;
 
     multiplier MUL (
         .clk(clk),
@@ -220,7 +254,21 @@ module execute (
         .md_alu_done(div_alu_done)
     );
 
-    assign md_alu_stall = mul_alu_stall || div_alu_stall;
+    fpu_unit FPU (
+        .clk(clk),
+        .reset(reset),
+        .fpu_start(id_ex_fpu_en),
+        .fpu_op(id_ex_fpu_operation),
+        .operand_a(fpu_operand_a),
+        .operand_b(id_ex_read_f_data2),
+        .operand_c(id_ex_read_f_data3),
+        .result(fpu_result),
+        .fpu_stall(fpu_stall),
+        .fpu_done(fpu_done)
+    );
+
+    assign fpu_result_out = fpu_result;
+    assign md_alu_stall = mul_alu_stall || div_alu_stall || fpu_stall;
 
     // Logic cho CSR Immediate (Zicsr)
     wire [31:0] csr_rs1_val = id_ex_funct3[2] ? {27'b0, id_ex_rs1} : alu_in1;
@@ -235,8 +283,9 @@ module execute (
         branch_taken = 0;
         csr_write_data = 32'b0;
         
-        // CHECK PREVIOUS: Nếu lệnh trùng với lệnh trước và không phải MDU, lấy kết quả cũ luôn
-        if (prev_id_ex_instr == id_ex_instr && id_ex_instr != 32'b0 && !id_ex_md_type) begin
+        // CHECK PREVIOUS: Nếu lệnh trùng với lệnh trước và không phải MDU/FPU, lấy kết quả cũ
+        if (prev_id_ex_instr == id_ex_instr && id_ex_instr != 32'b0 && 
+            !id_ex_md_type && !id_ex_fpu_en) begin
             alu_result = prev_alu_result;
             branch_taken = prev_branch_taken;
             csr_write_data = prev_csr_write_data;
@@ -251,6 +300,10 @@ module execute (
                     2'b11: csr_write_data = csr_read_data & ~csr_rs1_val;          // CSRRC
                     default: csr_write_data = csr_rs1_val;
                 endcase
+            end
+            else if (id_ex_f_to_x) begin
+                // FPU to Integer (FCVT.W.S, FMV.X.W, FCLASS.S)
+                alu_result = fpu_result;
             end
             else if (id_ex_lui) begin
                 alu_result = id_ex_ext_imm;

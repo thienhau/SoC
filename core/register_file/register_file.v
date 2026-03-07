@@ -32,6 +32,42 @@ module register_file (
                         (read_reg2 == 5'd2) ? x2_sp : rf_main[read_reg2];
 endmodule
 
+module f_register_file (
+    input clk, 
+    input reset,
+    input [4:0] read_reg1, 
+    input [4:0] read_reg2,
+    input [4:0] read_reg3,
+    output [31:0] read_data1, 
+    output [31:0] read_data2,
+    output [31:0] read_data3,
+    input reg_write_en,   
+    input [4:0] write_reg,    
+    input [31:0] write_data    
+);
+
+    // Ép Vivado sử dụng LUTRAM
+    (* ram_style = "distributed" *) reg [31:0] f_regfile [0:31];
+    
+    // Đọc bất đồng bộ (Asynchronous Read)
+    assign read_data1 = f_regfile[read_reg1];
+    assign read_data2 = f_regfile[read_reg2];
+    assign read_data3 = f_regfile[read_reg3];
+    
+    integer i;
+    // Ghi đồng bộ (Synchronous Write) + Reset bằng initial
+    always @(posedge clk) begin
+        if (reset) begin
+            // Reset tất cả về 0 (dùng vòng lặp)
+            for (i = 0; i < 32; i = i + 1) begin
+                f_regfile[i] <= 32'b0;
+            end
+        end else if (reg_write_en) begin
+            f_regfile[write_reg] <= write_data;
+        end
+    end
+endmodule
+
 module csr_register_file (
     input clk, reset,
     
@@ -167,31 +203,5 @@ module csr_register_file (
                 endcase
             end
         end
-    end
-endmodule
-
-// =============================================================================
-// SUB-MODULE: ICache Data RAM (Lưu trữ lệnh)
-// =============================================================================
-module icache_data_ram (
-    input clk,
-    input [3:0] index,
-    input [1:0] write_en, // [1] cho Way 2, [0] cho Way 1
-    input [63:0] write_data,
-    output [63:0] data1_out,
-    output [63:0] data2_out
-);
-    // Ép Vivado sử dụng LUTRAM
-    (* ram_style = "distributed" *) reg [63:0] data1 [0:15];
-    (* ram_style = "distributed" *) reg [63:0] data2 [0:15];
-
-    // Đọc bất đồng bộ (Asynchronous Read)
-    assign data1_out = data1[index];
-    assign data2_out = data2[index];
-
-    // Ghi đồng bộ (Synchronous Write)
-    always @(posedge clk) begin
-        if (write_en[0]) data1[index] <= write_data;
-        if (write_en[1]) data2[index] <= write_data;
     end
 endmodule

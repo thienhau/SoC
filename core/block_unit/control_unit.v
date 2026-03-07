@@ -1,10 +1,30 @@
 module main_control_unit (
-    input [6:0] opcode, funct7,
+    input [6:0] opcode,
+    input [6:0] funct7,
     input [2:0] funct3,
-    output reg reg_write, alu_src, mem_write, mem_read, mem_to_reg, branch, jal, jalr, lui, auipc, mem_unsigned,
-    output reg [1:0] alu_op, mem_size,
-    // Mul-div signals
-    output reg [2:0] md_operation
+    input [4:0] rs2,
+    output reg reg_write,
+    output reg alu_src,
+    output reg mem_write,
+    output reg mem_read,
+    output reg mem_to_reg,
+    output reg branch,
+    output reg jal,
+    output reg jalr,
+    output reg lui,
+    output reg auipc,
+    output reg mem_unsigned,
+    output reg [1:0] alu_op,
+    output reg [1:0] mem_size,
+    output reg [2:0] md_operation,
+    // FPU signals
+    output reg fpu_en,
+    output reg f_reg_write,
+    output reg f_mem_to_reg,
+    output reg f_mem_write,
+    output reg f_to_x,
+    output reg x_to_f,
+    output reg [4:0] fpu_operation
 );
     always @(*) begin 
         reg_write = 0;
@@ -21,6 +41,14 @@ module main_control_unit (
         mem_size = 2'b00;
         mem_unsigned = 0;
         md_operation = 3'b000;
+        // FPU defaults
+        fpu_en = 0;
+        f_reg_write = 0;
+        f_mem_to_reg = 0;
+        f_mem_write = 0;
+        f_to_x = 0;
+        x_to_f = 0;
+        fpu_operation = 5'b00000;
         
         case (opcode)
             7'b0110011: begin // R-type
@@ -110,11 +138,129 @@ module main_control_unit (
                 reg_write = 1;
                 alu_src = 1;
             end
-            7'b1110011: begin 
-                if (funct3 != 3'b000) reg_write = 1; 
+            7'b1110011: begin // System
+                if (funct3 != 3'b000) reg_write = 1;
+            end
+            7'b0000111: begin // FLW
+                alu_src = 1;
+                mem_read = 1;
+                f_mem_to_reg = 1;
+                f_reg_write = 1;
+                alu_op = 2'b00;
+                mem_size = 2'b00; // Word
+            end
+            7'b0100111: begin // FSW
+                alu_src = 1;
+                mem_write = 1;
+                f_mem_write = 1;
+                alu_op = 2'b00;
+                mem_size = 2'b00; // Word
+            end
+            7'b1010011: begin // FPU Operations
+                fpu_en = 1;
+                case (funct7)
+                    7'b0000000: begin // FADD.S
+                        f_reg_write = 1;
+                        fpu_operation = 5'b00000;
+                    end
+                    7'b0000100: begin // FSUB.S
+                        f_reg_write = 1;
+                        fpu_operation = 5'b00001;
+                    end
+                    7'b0001000: begin // FMUL.S
+                        f_reg_write = 1;
+                        fpu_operation = 5'b00010;
+                    end
+                    7'b0001100: begin // FDIV.S
+                        f_reg_write = 1;
+                        fpu_operation = 5'b01000;
+                    end
+                    7'b0101100: begin // FSQRT.S
+                        f_reg_write = 1;
+                        fpu_operation = 5'b01001;
+                    end
+                    7'b0010000: begin // FSGNJ
+                        f_reg_write = 1;
+                        case (funct3)
+                            3'b000: fpu_operation = 5'b01100; // FSGNJ
+                            3'b001: fpu_operation = 5'b01101; // FSGNJN
+                            3'b010: fpu_operation = 5'b01110; // FSGNJX
+                            default: fpu_operation = 5'b01100;
+                        endcase
+                    end
+                    7'b0010100: begin // FMIN/FMAX
+                        f_reg_write = 1;
+                        case (funct3)
+                            3'b000: fpu_operation = 5'b01010; // FMIN
+                            3'b001: fpu_operation = 5'b01011; // FMAX
+                            default: fpu_operation = 5'b01010;
+                        endcase
+                    end
+                    7'b1010000: begin // FEQ/FLT/FLE
+                        f_to_x = 1;
+                        reg_write = 1;
+                        case (funct3)
+                            3'b010: fpu_operation = 5'b00101; // FEQ
+                            3'b001: fpu_operation = 5'b00110; // FLT
+                            3'b000: fpu_operation = 5'b00111; // FLE
+                            default: fpu_operation = 5'b00101;
+                        endcase
+                    end
+                    7'b1100000: begin // FCVT.W.S / FCVT.WU.S
+                        f_to_x = 1;
+                        reg_write = 1;
+                        if (rs2[0])
+                            fpu_operation = 5'b10010; // FCVT.WU.S
+                        else
+                            fpu_operation = 5'b00011; // FCVT.W.S
+                    end
+                    7'b1101000: begin // FCVT.S.W / FCVT.S.WU
+                        x_to_f = 1;
+                        f_reg_write = 1;
+                        if (rs2[0])
+                            fpu_operation = 5'b10011; // FCVT.S.WU
+                        else
+                            fpu_operation = 5'b00100; // FCVT.S.W
+                    end
+                    7'b1110000: begin // FMV.X.W / FCLASS.S
+                        f_to_x = 1;
+                        reg_write = 1;
+                        case (funct3)
+                            3'b000: fpu_operation = 5'b01111; // FMV.X.W
+                            3'b001: fpu_operation = 5'b10001; // FCLASS.S
+                            default: fpu_operation = 5'b01111;
+                        endcase
+                    end
+                    7'b1111000: begin // FMV.W.X
+                        x_to_f = 1;
+                        f_reg_write = 1;
+                        fpu_operation = 5'b10000; // FMV.W.X
+                    end
+                    default: fpu_en = 0;
+                endcase
+            end
+            7'b1000011: begin // FMADD.S
+                fpu_en = 1;
+                f_reg_write = 1;
+                fpu_operation = 5'b10100;
+            end
+            7'b1000111: begin // FMSUB.S
+                fpu_en = 1;
+                f_reg_write = 1;
+                fpu_operation = 5'b10101;
+            end
+            7'b1001011: begin // FNMSUB.S
+                fpu_en = 1;
+                f_reg_write = 1;
+                fpu_operation = 5'b10110;
+            end
+            7'b1001111: begin // FNMADD.S
+                fpu_en = 1;
+                f_reg_write = 1;
+                fpu_operation = 5'b10111;
             end
             default: begin
-
+                // Do nothing
             end
         endcase
     end

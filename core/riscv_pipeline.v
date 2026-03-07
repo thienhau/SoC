@@ -41,7 +41,7 @@ module riscv_pipeline (
     
     // Instruction Decode signals
     wire [31:0] read_data1, read_data2, ext_imm;
-    wire [4:0] rs1, rs2, rd;
+    wire [4:0] rs1, rs2, rd, rs3;
     wire [2:0] funct3;
     wire [6:0] opcode, funct7;
     wire [11:0] jal_target, branch_target;
@@ -55,13 +55,16 @@ module riscv_pipeline (
     wire csr_we;
     wire md_type;
     wire [2:0] md_operation;
+    // FPU signals
+    wire fpu_en, f_reg_write, f_mem_to_reg, f_mem_write, f_to_x, x_to_f;
+    wire [4:0] fpu_operation;
     
     // ID/EX Pipeline signals
     wire [11:0] id_ex_pc_plus_4, id_ex_pc_in;
     wire [2:0] id_ex_funct3;
     wire [31:0] id_ex_instr;
     wire [31:0] id_ex_read_data1, id_ex_read_data2, id_ex_ext_imm;
-    wire [4:0] id_ex_rs1, id_ex_rs2, id_ex_rd;
+    wire [4:0] id_ex_rs1, id_ex_rs2, id_ex_rd, id_ex_rs3;
     wire id_ex_reg_write, id_ex_alu_src;
     wire id_ex_mem_write, id_ex_mem_read, id_ex_mem_to_reg;
     wire id_ex_branch, id_ex_jal, id_ex_jalr, id_ex_lui, id_ex_auipc, id_ex_mem_unsigned;
@@ -75,14 +78,21 @@ module riscv_pipeline (
     wire id_ex_csr_we;
     wire id_ex_md_type;
     wire [2:0] id_ex_md_operation;
+    // FPU ID/EX signals
+    wire id_ex_fpu_en, id_ex_f_reg_write, id_ex_f_mem_to_reg, id_ex_f_mem_write;
+    wire id_ex_f_to_x, id_ex_x_to_f;
+    wire [4:0] id_ex_fpu_operation;
+    wire [31:0] id_ex_read_f_data1, id_ex_read_f_data2, id_ex_read_f_data3;
     
     // Forwarding Unit signals
     wire [31:0] alu_in1, alu_in2, mem_write_data, csr_write_data_ex;
+    wire [31:0] fpu_in1, fpu_in2, fpu_in3;
     
     // Execute signals
     wire [31:0] alu_result;
     wire branch_taken;
     wire md_alu_stall;
+    wire [31:0] fpu_result_out;
     
     // EX/MEM Pipeline signals
     wire [31:0] ex_mem_instr;
@@ -98,6 +108,9 @@ module riscv_pipeline (
     wire [1:0] ex_mem_csr_op; 
     wire ex_mem_csr_we; 
     wire [31:0] ex_mem_csr_write_data;
+    // FPU EX/MEM signals
+    wire [31:0] ex_mem_fpu_result, ex_mem_f_store_data;
+    wire ex_mem_f_reg_write, ex_mem_f_mem_to_reg, ex_mem_f_mem_write;
 
     // Memory Access signals
     wire [31:0] mem_read_data;
@@ -108,34 +121,40 @@ module riscv_pipeline (
     wire mem_wb_mem_to_reg, mem_wb_reg_write, mem_wb_jal;
     wire [4:0] mem_wb_rd;
     wire mem_wb_ecall;
+    // FPU MEM/WB signals
+    wire [31:0] mem_wb_fpu_result;
+    wire mem_wb_f_reg_write, mem_wb_f_mem_to_reg;
     
     // Write Back signals
     wire [31:0] mem_wb_write_data;
+    wire [31:0] wb_f_write_data;
     
     // Pipeline Control signals
     wire load_use_stall, flush_branch, flush_jal, flush_trap;
 
     // Register File signals
     wire [31:0] read_data1_temp, read_data2_temp;
+    // F Register File signals
+    wire [31:0] read_f_data1_temp, read_f_data2_temp, read_f_data3_temp;
+    wire [31:0] read_f_data1, read_f_data2, read_f_data3;
 
-    wire [31:0] mie_val;      // Giả sử bạn đã nối dây từ CSR ra
-    wire mstatus_mie_val;    // Giả sử bạn đã nối dây từ CSR ra
+    wire [31:0] mie_val;
+    wire mstatus_mie_val;
 
-    // Phân loại ngắt ngoài (External Interrupt)
+    // Interrupt handling
     wire is_external_interrupt = external_irq_in & mie_val[11] & mstatus_mie_val;
-
     wire trap_enter = ex_mem_ecall | ex_mem_ebreak | is_external_interrupt;
     
-    // Phân loại mã mcause chuẩn RISC-V
-    wire [31:0] trap_cause = is_external_interrupt ? 32'h8000000b : // Ngắt ngoài
+    wire [31:0] trap_cause = is_external_interrupt ? 32'h8000000b : // External interrupt
                              ex_mem_ecall           ? 32'd11       : // ecall
                              ex_mem_ebreak          ? 32'd3        : 32'd0;
 
     wire [11:0] mtvec_pc, mepc_pc;
     wire [31:0] csr_read_data_raw, csr_read_data_fwd;
 
-    // CSR Forwarding (Giải quyết Hazard Đọc-Ghi CSR liên tiếp)
-    assign csr_read_data_fwd = (ex_mem_csr_we && (ex_mem_csr_addr == id_ex_csr_addr)) ? ex_mem_csr_write_data : csr_read_data_raw;
+    // CSR Forwarding
+    assign csr_read_data_fwd = (ex_mem_csr_we && (ex_mem_csr_addr == id_ex_csr_addr)) ? 
+                                ex_mem_csr_write_data : csr_read_data_raw;
 
     csr_register_file CSR_RF (
         .clk(clk), .reset(reset),
@@ -180,11 +199,13 @@ module riscv_pipeline (
 
     // Instruction Fetch
     instruction_fetch IF (
+        .reset(reset),
         .flush_temp(flush_temp),
         .trap_enter(trap_enter),
         .mret_exec(ex_mem_mret),
-        .mtvec_in(mtvec_pc),    // Nối từ CSR
-        .mepc_in(mepc_pc),      // Nối từ CSR
+        .reset_vector_in(12'h000),
+        .mtvec_in(mtvec_pc),
+        .mepc_in(mepc_pc),
         .ex_mem_branch_target(ex_mem_branch_target),
         .id_ex_jal_target(id_ex_jal_target),
         .pc_in(pc_in),
@@ -237,6 +258,7 @@ module riscv_pipeline (
         .rs1(rs1),
         .rs2(rs2),
         .rd(rd),
+        .rs3(rs3),
         .funct3(funct3),
         .opcode(opcode),
         .funct7(funct7),
@@ -263,11 +285,18 @@ module riscv_pipeline (
         .mret(mret),
         .csr_addr(csr_addr),
         .csr_op(csr_op),
-        .csr_we(csr_we)
+        .csr_we(csr_we),
+        .fpu_en(fpu_en),
+        .f_reg_write(f_reg_write),
+        .f_mem_to_reg(f_mem_to_reg),
+        .f_mem_write(f_mem_write),
+        .f_to_x(f_to_x),
+        .x_to_f(x_to_f),
+        .fpu_operation(fpu_operation)
     );
     
-    // Register File
-    register_file RF(
+    // Integer Register File
+    register_file RF (
         .clk(clk),
         .reset(reset),
         .read_reg1(rs1),
@@ -279,12 +308,34 @@ module riscv_pipeline (
         .read_data2(read_data2_temp)
     );
     
-    // Forwarding from MEM/WB to ID
+    // Forwarding from MEM/WB to ID (integer)
     assign read_data1 = (rs1 != 0 && rs1 == mem_wb_rd && mem_wb_reg_write) 
-                    ? mem_wb_write_data : read_data1_temp;
-
+                        ? mem_wb_write_data : read_data1_temp;
     assign read_data2 = (rs2 != 0 && rs2 == mem_wb_rd && mem_wb_reg_write)
-                    ? mem_wb_write_data : read_data2_temp;
+                        ? mem_wb_write_data : read_data2_temp;
+    
+    // Floating-point Register File (LUTRAM)
+    f_register_file F_RF (
+        .clk(clk),
+        .reset(reset),
+        .read_reg1(rs1),
+        .read_reg2(rs2),
+        .read_reg3(rs3),
+        .read_data1(read_f_data1_temp),
+        .read_data2(read_f_data2_temp),
+        .read_data3(read_f_data3_temp),
+        .reg_write_en(mem_wb_f_reg_write),
+        .write_reg(mem_wb_rd),
+        .write_data(wb_f_write_data)
+    );
+
+    // Forwarding from MEM/WB to ID (float)
+    assign read_f_data1 = (rs1 == mem_wb_rd && mem_wb_f_reg_write) 
+                           ? wb_f_write_data : read_f_data1_temp;
+    assign read_f_data2 = (rs2 == mem_wb_rd && mem_wb_f_reg_write) 
+                           ? wb_f_write_data : read_f_data2_temp;
+    assign read_f_data3 = (rs3 == mem_wb_rd && mem_wb_f_reg_write) 
+                           ? wb_f_write_data : read_f_data3_temp;
     
     // ID/EX Pipeline Register
     id_ex_register ID_EX (
@@ -331,6 +382,19 @@ module riscv_pipeline (
         .md_type(md_type),
         .md_operation(md_operation),
         .if_id_instr(if_id_instr),
+        // FPU inputs
+        .fpu_en(fpu_en),
+        .f_reg_write(f_reg_write),
+        .f_mem_to_reg(f_mem_to_reg),
+        .f_mem_write(f_mem_write),
+        .f_to_x(f_to_x),
+        .x_to_f(x_to_f),
+        .fpu_operation(fpu_operation),
+        .read_f_data1(read_f_data1),
+        .read_f_data2(read_f_data2),
+        .read_f_data3(read_f_data3),
+        .rs3(rs3),
+        // Outputs
         .id_ex_pc_plus_4(id_ex_pc_plus_4),
         .id_ex_pc_in(id_ex_pc_in),
         .id_ex_funct3(id_ex_funct3),
@@ -365,7 +429,19 @@ module riscv_pipeline (
         .id_ex_csr_we(id_ex_csr_we),
         .id_ex_md_type(id_ex_md_type),
         .id_ex_md_operation(id_ex_md_operation),
-        .id_ex_instr(id_ex_instr)
+        .id_ex_instr(id_ex_instr),
+        // FPU outputs
+        .id_ex_fpu_en(id_ex_fpu_en),
+        .id_ex_f_reg_write(id_ex_f_reg_write),
+        .id_ex_f_mem_to_reg(id_ex_f_mem_to_reg),
+        .id_ex_f_mem_write(id_ex_f_mem_write),
+        .id_ex_f_to_x(id_ex_f_to_x),
+        .id_ex_x_to_f(id_ex_x_to_f),
+        .id_ex_fpu_operation(id_ex_fpu_operation),
+        .id_ex_read_f_data1(id_ex_read_f_data1),
+        .id_ex_read_f_data2(id_ex_read_f_data2),
+        .id_ex_read_f_data3(id_ex_read_f_data3),
+        .id_ex_rs3(id_ex_rs3)
     );
     
     // Forwarding Unit
@@ -384,7 +460,19 @@ module riscv_pipeline (
         .mem_wb_write_data(mem_wb_write_data),
         .alu_in1(alu_in1),
         .alu_in2(alu_in2),
-        .mem_write_data(mem_write_data)
+        .mem_write_data(mem_write_data),
+        // FPU
+        .id_ex_read_f_data1(id_ex_read_f_data1),
+        .id_ex_read_f_data2(id_ex_read_f_data2),
+        .id_ex_read_f_data3(id_ex_read_f_data3),
+        .id_ex_rs3(id_ex_rs3),
+        .ex_mem_f_reg_write(ex_mem_f_reg_write),
+        .mem_wb_f_reg_write(mem_wb_f_reg_write),
+        .ex_mem_fpu_result(ex_mem_fpu_result),
+        .mem_wb_f_write_data(wb_f_write_data),
+        .fpu_in1(fpu_in1),
+        .fpu_in2(fpu_in2),
+        .fpu_in3(fpu_in3)
     );
     
     // Execute Stage
@@ -407,10 +495,20 @@ module riscv_pipeline (
         .id_ex_csr_we(id_ex_csr_we),
         .csr_read_data(csr_read_data_fwd),
         .id_ex_rs1(id_ex_rs1),
+        // FPU
+        .id_ex_fpu_en(id_ex_fpu_en),
+        .id_ex_fpu_operation(id_ex_fpu_operation),
+        .id_ex_read_f_data1(fpu_in1),
+        .id_ex_read_f_data2(fpu_in2),
+        .id_ex_read_f_data3(fpu_in3),
+        .id_ex_f_to_x(id_ex_f_to_x),
+        .id_ex_x_to_f(id_ex_x_to_f),
+        // Outputs
         .alu_result(alu_result),
         .branch_taken(branch_taken),
         .csr_write_data(csr_write_data_ex),
-        .md_alu_stall(md_alu_stall)
+        .md_alu_stall(md_alu_stall),
+        .fpu_result_out(fpu_result_out)
     );
     
     // EX/MEM Pipeline Register
@@ -449,6 +547,13 @@ module riscv_pipeline (
         .id_ex_csr_we(id_ex_csr_we),
         .csr_write_data_in(csr_write_data_ex),
         .id_ex_instr(id_ex_instr),
+        // FPU
+        .fpu_result(fpu_result_out),
+        .id_ex_read_f_data2(fpu_in2),
+        .id_ex_f_reg_write(id_ex_f_reg_write),
+        .id_ex_f_mem_to_reg(id_ex_f_mem_to_reg),
+        .id_ex_f_mem_write(id_ex_f_mem_write),
+        // Outputs
         .ex_mem_alu_result(ex_mem_alu_result),
         .ex_mem_rd(ex_mem_rd),
         .ex_mem_branch_target(ex_mem_branch_target),
@@ -473,14 +578,23 @@ module riscv_pipeline (
         .ex_mem_csr_op(ex_mem_csr_op),
         .ex_mem_csr_we(ex_mem_csr_we),
         .ex_mem_csr_write_data(ex_mem_csr_write_data),
-        .ex_mem_instr(ex_mem_instr)
+        .ex_mem_instr(ex_mem_instr),
+        // FPU outputs
+        .ex_mem_fpu_result(ex_mem_fpu_result),
+        .ex_mem_f_store_data(ex_mem_f_store_data),
+        .ex_mem_f_reg_write(ex_mem_f_reg_write),
+        .ex_mem_f_mem_to_reg(ex_mem_f_mem_to_reg),
+        .ex_mem_f_mem_write(ex_mem_f_mem_write)
     );
+    
+    // Select write data for memory (integer or float)
+    wire [31:0] final_mem_write_data = ex_mem_f_mem_write ? ex_mem_f_store_data : ex_mem_mem_write_data;
     
     // Memory Access Stage
     memory_access MEM (
         .ex_mem_alu_result(ex_mem_alu_result),
-        .ex_mem_mem_write_data(ex_mem_mem_write_data),
-        .ex_mem_mem_write(ex_mem_mem_write),
+        .ex_mem_mem_write_data(final_mem_write_data),
+        .ex_mem_mem_write(ex_mem_mem_write | ex_mem_f_mem_write), // Combine write signals
         .ex_mem_mem_read(ex_mem_mem_read),
         .mem_read_data(mem_read_data),
         .dcache_read_req(dcache_read_req),
@@ -505,6 +619,11 @@ module riscv_pipeline (
         .ex_mem_alu_result(ex_mem_alu_result),
         .ex_mem_rd(ex_mem_rd),
         .ex_mem_ecall(ex_mem_ecall),
+        // FPU
+        .ex_mem_fpu_result(ex_mem_fpu_result),
+        .ex_mem_f_reg_write(ex_mem_f_reg_write),
+        .ex_mem_f_mem_to_reg(ex_mem_f_mem_to_reg),
+        // Outputs
         .mem_wb_mem_read_data(mem_wb_mem_read_data),
         .mem_wb_pc_plus_4(mem_wb_pc_plus_4),
         .mem_wb_mem_to_reg(mem_wb_mem_to_reg),
@@ -512,10 +631,14 @@ module riscv_pipeline (
         .mem_wb_jal(mem_wb_jal),
         .mem_wb_alu_result(mem_wb_alu_result),
         .mem_wb_rd(mem_wb_rd),
-        .mem_wb_ecall(mem_wb_ecall)
+        .mem_wb_ecall(mem_wb_ecall),
+        // FPU outputs
+        .mem_wb_fpu_result(mem_wb_fpu_result),
+        .mem_wb_f_reg_write(mem_wb_f_reg_write),
+        .mem_wb_f_mem_to_reg(mem_wb_f_mem_to_reg)
     );
     
-    // Write Back Stage
+    // Write Back Stage (Integer)
     write_back WB (
         .mem_wb_mem_read_data(mem_wb_mem_read_data),
         .mem_wb_alu_result(mem_wb_alu_result),
@@ -524,6 +647,9 @@ module riscv_pipeline (
         .mem_wb_jal(mem_wb_jal),
         .mem_wb_write_data(mem_wb_write_data)
     );
+    
+    // Write data for F-Reg
+    assign wb_f_write_data = mem_wb_f_mem_to_reg ? mem_wb_mem_read_data : mem_wb_fpu_result;
     
     // Pipeline Control Unit
     pipeline_control_unit PCU (
