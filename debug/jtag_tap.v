@@ -9,6 +9,7 @@ module jtag_tap (
     output wire       tdo,
     
     // Interface to Debug Module (DMI)
+    output wire [4:0] o_ir,       // SỬA LỖI: Thêm port o_ir (5-bit) bị thiếu
     output wire       o_shift_dr,
     output wire       o_capture_dr,
     output wire       o_update_dr,
@@ -99,6 +100,7 @@ module jtag_tap (
     // -----------------------------------------------------
     // Outputs to Debug Module
     // -----------------------------------------------------
+    assign o_ir         = ir_reg;     // SỬA LỖI: Gán giá trị ir_reg cho o_ir
     assign o_shift_dr   = (state == SDR);
     assign o_capture_dr = (state == CDR);
     assign o_update_dr  = (state == UDR);

@@ -54,6 +54,10 @@ module top_soc (
     wire        cpu_ic_stall, cpu_dc_stall;
     wire [1:0]  cpu_dc_size;
 
+    // --- Tín hiệu JTAG Internal (Nối TAP với Debug Module) ---
+    wire        j_shift, j_update, j_capture, j_sel_dmi, j_tdo_dmi;
+    wire [4:0]  j_ir;
+
     // Tín hiệu giữa Cache và CDC Bridge (Miền CPU)
     wire        ic_cdc_req, dc_cdc_rd, dc_cdc_wr;
     wire [31:0] ic_cdc_addr, dc_cdc_addr;
@@ -81,6 +85,44 @@ module top_soc (
     clock_gate CG_GPO (.clk_in(clk_sys), .en(clk_en_gpo), .test_en(1'b0), .clk_out(clk_gpo_gated));
     clock_gate CG_ACC (.clk_in(clk_sys), .en(clk_en_acc), .test_en(1'b0), .clk_out(clk_acc_gated));
 
+    jtag_tap JTAG_TAP_INST (
+        .tck(jtag_tck),
+        .trst_n(jtag_trst_n),
+        .tms(jtag_tms),
+        .tdi(jtag_tdi),
+        .tdo(jtag_tdo),
+        // Các tín hiệu điều khiển TAP State Machine đưa sang Debug Module
+        .o_ir(j_ir),
+        .o_shift_dr(j_shift),
+        .o_capture_dr(j_capture),
+        .o_update_dr(j_update),
+        .o_sel_dmi(j_sel_dmi),
+        .i_tdo_dmi(j_tdo_dmi) // Nhận TDO ngược lại từ DM
+    );
+
+    debug_module DBG_MODULE_INST (
+        .tck(jtag_tck),
+        .trst_n(jtag_trst_n),
+        .i_shift_dr(j_shift),
+        .i_capture_dr(j_capture),
+        .i_update_dr(j_update),
+        .i_sel_dmi(j_sel_dmi),
+        .i_tdi(jtag_tdi),
+        .o_tdo(j_tdo_dmi),
+        
+        .clk_sys(clk_dbg_gated),
+        .rst_sys_n(sys_rst_n),
+        
+        // Giao tiếp DMI (Nối vào AXI Master phía dưới)
+        .req_sys(dtm_req),
+        .op_sys(dtm_op),
+        .addr_sys(dtm_addr),
+        .wdata_sys(dtm_wdata),
+        .ack_sys(dtm_ack),
+        .resp_sys(dtm_resp),
+        .rdata_sys(dtm_rdata)
+    );
+
     // 3. KHỐI CPU CORE VÀ CACHE
     riscv_pipeline CPU_CORE (
         .clk(clk_cpu_gated), .reset_n(sys_rst_n), .riscv_start(1'b1),
@@ -92,13 +134,13 @@ module top_soc (
     );
 
     instruction_cache I_CACHE (
-        .clk(clk_sys), .reset(!sys_rst_n), .flush(1'b0),
+        .clk(clk_sys), .rst_n(sys_rst_n), .flush(1'b0),
         .cpu_read_req(cpu_ic_req), .cpu_addr(cpu_ic_addr), .cpu_read_data(cpu_ic_rdata), .icache_stall(cpu_ic_stall),
         .mem_read_req(ic_cdc_req), .mem_addr(ic_cdc_addr), .mem_read_data(ic_cdc_rdata), .mem_read_valid(ic_cdc_ready)
     );
 
     data_cache D_CACHE (
-        .clk(clk_sys), .reset(!sys_rst_n),
+        .clk(clk_sys), .rst_n(sys_rst_n),
         .cpu_read_req(cpu_dc_rd), .cpu_write_req(cpu_dc_wr), .cpu_addr(cpu_dc_addr), .cpu_write_data(cpu_dc_wdata), 
         .cpu_read_data(cpu_dc_rdata), .dcache_stall(cpu_dc_stall), .mem_size(cpu_dc_size),
         .mem_read_req(dc_cdc_rd), .mem_write_req(dc_cdc_wr), .mem_addr(dc_cdc_addr), 

@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module debug_module #(
-    parameter ADDR_WIDTH = 16,
+    parameter ADDR_WIDTH = 32, // SỬA LỖI: Mở rộng từ 16 lên 32 bit
     parameter DATA_WIDTH = 32
 )(
     // JTAG TCK Domain
@@ -33,8 +33,8 @@ module debug_module #(
     // JTAG TCK DOMAIN LOGIC
     // =========================================================
     
-    // 50-bit DMI Register: [49:48] OP/STATUS | [47:32] ADDR | [31:0] DATA
-    reg [49:0] dmi_shift_reg;
+    // SỬA LỖI: 66-bit DMI Register: [65:64] OP/STATUS | [63:32] ADDR | [31:0] DATA
+    reg [65:0] dmi_shift_reg;
     
     // Handshake registers (TCK Domain)
     reg req_tck;
@@ -52,10 +52,10 @@ module debug_module #(
     // DMI Shift and Update Logic
     always @(posedge tck or negedge trst_n) begin
         if (!trst_n) begin
-            dmi_shift_reg <= 50'b0;
+            dmi_shift_reg <= 66'b0; // Sửa từ 50'b0 thành 66'b0
             req_tck       <= 1'b0;
             cmd_op        <= 2'b0;
-            cmd_addr      <= 16'b0;
+            cmd_addr      <= 32'b0; // Sửa từ 16'b0 thành 32'b0
             cmd_wdata     <= 32'b0;
         end else if (i_sel_dmi) begin
             // 1. Capture Phase: Load status/rdata from system domain
@@ -64,14 +64,14 @@ module debug_module #(
             end
             // 2. Shift Phase: Shift bits from TDI to TDO
             else if (i_shift_dr) begin
-                dmi_shift_reg <= {i_tdi, dmi_shift_reg[49:1]};
+                dmi_shift_reg <= {i_tdi, dmi_shift_reg[65:1]}; // Sửa từ [49:1] thành [65:1]
             end
             // 3. Update Phase: Trigger a new command to System Domain
             else if (i_update_dr) begin
                 // Nếu OP != 0 (Không phải NOP) -> Tạo Request
-                if (dmi_shift_reg[49:48] != 2'b00) begin
-                    cmd_op    <= dmi_shift_reg[49:48];
-                    cmd_addr  <= dmi_shift_reg[47:32];
+                if (dmi_shift_reg[65:64] != 2'b00) begin // Sửa từ [49:48] thành [65:64]
+                    cmd_op    <= dmi_shift_reg[65:64];   // Sửa từ [49:48] thành [65:64]
+                    cmd_addr  <= dmi_shift_reg[63:32];   // Sửa từ [47:32] thành [63:32]
                     cmd_wdata <= dmi_shift_reg[31:0];
                     req_tck   <= 1'b1;
                 end
@@ -104,7 +104,7 @@ module debug_module #(
         if (!rst_sys_n) begin
             req_sys   <= 1'b0;
             op_sys    <= 2'b0;
-            addr_sys  <= 16'b0;
+            addr_sys  <= 32'b0; // Sửa từ 16'b0 thành 32'b0
             wdata_sys <= 32'b0;
         end else begin
             // Bắt đầu giao dịch mới khi phát hiện cạnh lên của REQ đã đồng bộ
