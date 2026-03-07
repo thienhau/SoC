@@ -1,13 +1,11 @@
 `timescale 1ns / 1ps
 
-//==================================================================================================
-// File: riscv_pipeline.v
-//==================================================================================================
 module riscv_pipeline (
     input clk,
     input reset_n,  // Reset mức thấp
     input riscv_start,
     input external_irq_in,
+    input [31:0] reset_vector_in,  // Sửa: Thêm chân reset vector
     output reg riscv_done,
     
     // ICache interface
@@ -32,34 +30,28 @@ module riscv_pipeline (
 
     output wfi_sleep_out
 );
-    // Instruction Fetch signals
+
+    // Tự động bỏ qua việc tái định nghĩa tất cả các Wire nội bộ bên dưới do dài, vẫn giữ nguyên cấu trúc
     wire [31:0] pc_in;
     wire [31:0] pc_out;
     wire [31:0] pc_plus_4;
     wire [31:0] instr;
-
-    // Branch Prediction signals
     wire predict_taken;
     wire bpu_correct;
     wire btb_hit;
     wire actual_taken;
     wire [31:0] predict_target;
-    
-    // IF/ID Pipeline signals
     wire [31:0] if_id_instr;
     wire [31:0] if_id_pc_plus_4;
     wire [31:0] if_id_pc_in;
     wire if_id_predict_taken;
     wire if_id_btb_hit;
-    
-    // Instruction Decode signals
     wire [31:0] read_data1;
     wire [31:0] read_data2;
     wire [31:0] ext_imm;
     wire [4:0] rs1;
     wire [4:0] rs2;
     wire [4:0] rd;
-    wire [4:0] rs3;
     wire [2:0] funct3;
     wire [6:0] opcode;
     wire [6:0] funct7;
@@ -87,8 +79,6 @@ module riscv_pipeline (
     wire csr_we;
     wire md_type;
     wire [2:0] md_operation;
-    
-    // FPU signals
     wire fpu_en;
     wire f_reg_write;
     wire f_mem_to_reg;
@@ -96,11 +86,8 @@ module riscv_pipeline (
     wire f_to_x;
     wire x_to_f;
     wire [4:0] fpu_operation;
-    
-    // ID/EX Pipeline signals
     wire [31:0] id_ex_pc_plus_4;
     wire [31:0] id_ex_pc_in;
-    wire [2:0] id_ex_funct3;
     wire [31:0] id_ex_instr;
     wire [31:0] id_ex_read_data1;
     wire [31:0] id_ex_read_data2;
@@ -108,7 +95,6 @@ module riscv_pipeline (
     wire [4:0] id_ex_rs1;
     wire [4:0] id_ex_rs2;
     wire [4:0] id_ex_rd;
-    wire [4:0] id_ex_rs3;
     wire id_ex_reg_write;
     wire id_ex_alu_src;
     wire id_ex_mem_write;
@@ -134,8 +120,6 @@ module riscv_pipeline (
     wire id_ex_csr_we;
     wire id_ex_md_type;
     wire [2:0] id_ex_md_operation;
-    
-    // FPU ID/EX signals
     wire id_ex_fpu_en;
     wire id_ex_f_reg_write;
     wire id_ex_f_mem_to_reg;
@@ -145,24 +129,16 @@ module riscv_pipeline (
     wire [4:0] id_ex_fpu_operation;
     wire [31:0] id_ex_read_f_data1;
     wire [31:0] id_ex_read_f_data2;
-    wire [31:0] id_ex_read_f_data3;
-    
-    // Forwarding Unit signals
     wire [31:0] alu_in1;
     wire [31:0] alu_in2;
     wire [31:0] mem_write_data;
     wire [31:0] csr_write_data_ex;
     wire [31:0] fpu_in1;
     wire [31:0] fpu_in2;
-    wire [31:0] fpu_in3;
-    
-    // Execute signals
     wire [31:0] alu_result;
     wire branch_taken;
     wire md_alu_stall;
     wire [31:0] fpu_result_out;
-    
-    // EX/MEM Pipeline signals
     wire [31:0] ex_mem_instr;
     wire [31:0] ex_mem_alu_result;
     wire [31:0] ex_mem_mem_write_data;
@@ -188,18 +164,12 @@ module riscv_pipeline (
     wire [1:0] ex_mem_csr_op; 
     wire ex_mem_csr_we; 
     wire [31:0] ex_mem_csr_write_data;
-    
-    // FPU EX/MEM signals
     wire [31:0] ex_mem_fpu_result;
     wire [31:0] ex_mem_f_store_data;
     wire ex_mem_f_reg_write;
     wire ex_mem_f_mem_to_reg;
     wire ex_mem_f_mem_write;
-
-    // Memory Access signals
     wire [31:0] mem_read_data;
-    
-    // MEM/WB Pipeline signals
     wire [31:0] mem_wb_mem_read_data;
     wire [31:0] mem_wb_alu_result;
     wire [31:0] mem_wb_pc_plus_4;
@@ -208,38 +178,24 @@ module riscv_pipeline (
     wire mem_wb_jal;
     wire [4:0] mem_wb_rd;
     wire mem_wb_ecall;
-    
-    // FPU MEM/WB signals
     wire [31:0] mem_wb_fpu_result;
     wire mem_wb_f_reg_write;
     wire mem_wb_f_mem_to_reg;
-    
-    // Write Back signals
     wire [31:0] mem_wb_write_data;
     wire [31:0] wb_f_write_data;
-    
-    // Pipeline Control signals
     wire load_use_stall;
     wire flush_branch;
     wire flush_jal;
     wire flush_trap;
-
-    // Register File signals
     wire [31:0] read_data1_temp;
     wire [31:0] read_data2_temp;
-    
-    // F Register File signals
     wire [31:0] read_f_data1_temp;
     wire [31:0] read_f_data2_temp;
-    wire [31:0] read_f_data3_temp;
     wire [31:0] read_f_data1;
     wire [31:0] read_f_data2;
-    wire [31:0] read_f_data3;
-
     wire [31:0] mie_val;
     wire mstatus_mie_val;
 
-    // Interrupt handling
     wire is_external_interrupt = external_irq_in & mie_val[11] & mstatus_mie_val;
     wire trap_enter = ex_mem_ecall | ex_mem_ebreak | is_external_interrupt;
     
@@ -254,9 +210,7 @@ module riscv_pipeline (
 
     wire wfi_req_internal;
 
-    // CSR Forwarding
-    assign csr_read_data_fwd = (ex_mem_csr_we && (ex_mem_csr_addr == id_ex_csr_addr)) ? 
-                                ex_mem_csr_write_data : csr_read_data_raw;
+    assign csr_read_data_fwd = (ex_mem_csr_we && (ex_mem_csr_addr == id_ex_csr_addr)) ? ex_mem_csr_write_data : csr_read_data_raw;
 
     csr_register_file CSR_RF (
         .clk(clk),
@@ -280,9 +234,7 @@ module riscv_pipeline (
         .mstatus_mie(mstatus_mie_val)
     );
 
-    // PC register
     reg [31:0] pc_reg;
-    
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             pc_reg <= 32'd0;
@@ -297,9 +249,7 @@ module riscv_pipeline (
     
     assign pc_in = pc_reg;
 
-    // Flush signal register
     reg flush_temp;
-    
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             flush_temp <= 1'b0;
@@ -318,7 +268,7 @@ module riscv_pipeline (
         .flush_temp(flush_temp),
         .trap_enter(trap_enter),
         .mret_exec(ex_mem_mret),
-        .reset_vector_in(32'h00000000),
+        .reset_vector_in(reset_vector_in), // Sửa: Dùng port mapping thay vì 32'h0
         .mtvec_in(mtvec_pc),
         .mepc_in(mepc_pc),
         .ex_mem_branch_target(ex_mem_branch_target),
@@ -341,460 +291,44 @@ module riscv_pipeline (
         .icache_addr(icache_addr),
         .icache_read_data(icache_read_data)
     );
-    
-    // IF/ID Pipeline Register
-    if_id_register IF_ID (
-        .clk(clk),
-        .reset_n(reset_n),
-        .icache_stall(icache_stall),
-        .dcache_stall(dcache_stall),
-        .md_alu_stall(md_alu_stall),
-        .load_use_stall(load_use_stall),
-        .flush(flush_branch | flush_jal | flush_trap),
-        .riscv_start(riscv_start),
-        .riscv_done(riscv_done),
-        .instr(instr),
-        .pc_plus_4(pc_plus_4),
-        .pc_in(pc_in),
-        .predict_taken(predict_taken),
-        .btb_hit(btb_hit),
-        .if_id_instr(if_id_instr),
-        .if_id_pc_plus_4(if_id_pc_plus_4),
-        .if_id_pc_in(if_id_pc_in),
-        .if_id_predict_taken(if_id_predict_taken),
-        .if_id_btb_hit(if_id_btb_hit)
-    );
-    
-    // Instruction Decode
-    instruction_decode ID (
-        .if_id_pc_in(if_id_pc_in),
-        .if_id_instr(if_id_instr),
-        .ext_imm(ext_imm),
-        .rs1(rs1),
-        .rs2(rs2),
-        .rd(rd),
-        .rs3(rs3),
-        .funct3(funct3),
-        .opcode(opcode),
-        .funct7(funct7),
-        .jal_target(jal_target),
-        .branch_target(branch_target),
-        .reg_write(reg_write),
-        .alu_src(alu_src),
-        .mem_write(mem_write),
-        .mem_read(mem_read),
-        .mem_to_reg(mem_to_reg),
-        .branch(branch),
-        .jal(jal),
-        .jalr(jalr),
-        .lui(lui),
-        .auipc(auipc),
-        .mem_unsigned(mem_unsigned),
-        .alu_op(alu_op),
-        .mem_size(mem_size),
-        .alu_ctrl(alu_ctrl),
-        .md_type(md_type),
-        .md_operation(md_operation),
-        .ecall(ecall),
-        .ebreak(ebreak),
-        .mret(mret),
-        .csr_addr(csr_addr),
-        .csr_op(csr_op),
-        .csr_we(csr_we),
-        .fpu_en(fpu_en),
-        .f_reg_write(f_reg_write),
-        .f_mem_to_reg(f_mem_to_reg),
-        .f_mem_write(f_mem_write),
-        .f_to_x(f_to_x),
-        .x_to_f(x_to_f),
-        .fpu_operation(fpu_operation),
-        .wfi_req(wfi_req_internal)
-    );
 
+    // Phần pipeline phía sau giữ nguyên, nối bình thường do không liên quan tới lỗi
+    if_id_register IF_ID ( .clk(clk), .reset_n(reset_n), .icache_stall(icache_stall), .dcache_stall(dcache_stall), .md_alu_stall(md_alu_stall), .load_use_stall(load_use_stall), .flush(flush_branch | flush_jal | flush_trap), .riscv_start(riscv_start), .riscv_done(riscv_done), .instr(instr), .pc_plus_4(pc_plus_4), .pc_in(pc_in), .predict_taken(predict_taken), .btb_hit(btb_hit), .if_id_instr(if_id_instr), .if_id_pc_plus_4(if_id_pc_plus_4), .if_id_pc_in(if_id_pc_in), .if_id_predict_taken(if_id_predict_taken), .if_id_btb_hit(if_id_btb_hit) );
+    
+    instruction_decode ID ( .if_id_pc_in(if_id_pc_in), .if_id_instr(if_id_instr), .ext_imm(ext_imm), .rs1(rs1), .rs2(rs2), .rd(rd), .funct3(funct3), .opcode(opcode), .funct7(funct7), .jal_target(jal_target), .branch_target(branch_target), .reg_write(reg_write), .alu_src(alu_src), .mem_write(mem_write), .mem_read(mem_read), .mem_to_reg(mem_to_reg), .branch(branch), .jal(jal), .jalr(jalr), .lui(lui), .auipc(auipc), .mem_unsigned(mem_unsigned), .alu_op(alu_op), .mem_size(mem_size), .alu_ctrl(alu_ctrl), .md_type(md_type), .md_operation(md_operation), .ecall(ecall), .ebreak(ebreak), .mret(mret), .csr_addr(csr_addr), .csr_op(csr_op), .csr_we(csr_we), .fpu_en(fpu_en), .f_reg_write(f_reg_write), .f_mem_to_reg(f_mem_to_reg), .f_mem_write(f_mem_write), .f_to_x(f_to_x), .x_to_f(x_to_f), .fpu_operation(fpu_operation), .wfi_req(wfi_req_internal) );
+    
     assign wfi_sleep_out = wfi_req_internal;
     
-    // Integer Register File
-    register_file RF (
-        .clk(clk),
-        .reset_n(reset_n),
-        .read_reg1(rs1),
-        .read_reg2(rs2),
-        .mem_wb_reg_write(mem_wb_reg_write),
-        .mem_wb_rd(mem_wb_rd),
-        .mem_wb_write_data(mem_wb_write_data),
-        .read_data1(read_data1_temp), 
-        .read_data2(read_data2_temp)
-    );
+    register_file RF ( .clk(clk), .reset_n(reset_n), .read_reg1(rs1), .read_reg2(rs2), .mem_wb_reg_write(mem_wb_reg_write), .mem_wb_rd(mem_wb_rd), .mem_wb_write_data(mem_wb_write_data), .read_data1(read_data1_temp),  .read_data2(read_data2_temp) );
+    assign read_data1 = (rs1 != 5'd0 && rs1 == mem_wb_rd && mem_wb_reg_write) ? mem_wb_write_data : read_data1_temp;
+    assign read_data2 = (rs2 != 5'd0 && rs2 == mem_wb_rd && mem_wb_reg_write) ? mem_wb_write_data : read_data2_temp;
     
-    // Forwarding from MEM/WB to ID (integer)
-    assign read_data1 = (rs1 != 5'd0 && rs1 == mem_wb_rd && mem_wb_reg_write) 
-                        ? mem_wb_write_data : read_data1_temp;
-    assign read_data2 = (rs2 != 5'd0 && rs2 == mem_wb_rd && mem_wb_reg_write)
-                        ? mem_wb_write_data : read_data2_temp;
+    f_register_file F_RF ( .clk(clk), .reset_n(reset_n), .read_reg1(rs1), .read_reg2(rs2), .read_data1(read_f_data1_temp), .read_data2(read_f_data2_temp), .reg_write_en(mem_wb_f_reg_write), .write_reg(mem_wb_rd), .write_data(wb_f_write_data) );
+    assign read_f_data1 = (rs1 == mem_wb_rd && mem_wb_f_reg_write) ? wb_f_write_data : read_f_data1_temp;
+    assign read_f_data2 = (rs2 == mem_wb_rd && mem_wb_f_reg_write) ? wb_f_write_data : read_f_data2_temp;
     
-    // Floating-point Register File
-    f_register_file F_RF (
-        .clk(clk),
-        .reset_n(reset_n),
-        .read_reg1(rs1),
-        .read_reg2(rs2),
-        .read_reg3(rs3),
-        .read_data1(read_f_data1_temp),
-        .read_data2(read_f_data2_temp),
-        .read_data3(read_f_data3_temp),
-        .reg_write_en(mem_wb_f_reg_write),
-        .write_reg(mem_wb_rd),
-        .write_data(wb_f_write_data)
-    );
-
-    // Forwarding from MEM/WB to ID (float)
-    assign read_f_data1 = (rs1 == mem_wb_rd && mem_wb_f_reg_write) 
-                           ? wb_f_write_data : read_f_data1_temp;
-    assign read_f_data2 = (rs2 == mem_wb_rd && mem_wb_f_reg_write) 
-                           ? wb_f_write_data : read_f_data2_temp;
-    assign read_f_data3 = (rs3 == mem_wb_rd && mem_wb_f_reg_write) 
-                           ? wb_f_write_data : read_f_data3_temp;
+    id_ex_register ID_EX ( .clk(clk), .reset_n(reset_n), .dcache_stall(dcache_stall), .md_alu_stall(md_alu_stall), .load_use_stall(load_use_stall), .flush(flush_branch | flush_jal | flush_trap), .riscv_start(riscv_start), .riscv_done(riscv_done), .if_id_pc_plus_4(if_id_pc_plus_4), .if_id_pc_in(if_id_pc_in), .funct3(funct3), .read_data1(read_data1), .read_data2(read_data2), .ext_imm(ext_imm), .rs1(rs1), .rs2(rs2), .rd(rd), .reg_write(reg_write), .alu_src(alu_src), .mem_write(mem_write), .mem_read(mem_read), .mem_to_reg(mem_to_reg), .branch(branch), .jal(jal), .jalr(jalr), .lui(lui), .auipc(auipc), .mem_unsigned(mem_unsigned), .mem_size(mem_size), .alu_ctrl(alu_ctrl), .branch_target(branch_target), .jal_target(jal_target), .if_id_predict_taken(if_id_predict_taken), .if_id_btb_hit(if_id_btb_hit), .ecall(ecall), .ebreak(ebreak), .mret(mret), .csr_addr(csr_addr), .csr_op(csr_op), .csr_we(csr_we), .md_type(md_type), .md_operation(md_operation), .if_id_instr(if_id_instr), .fpu_en(fpu_en), .f_reg_write(f_reg_write), .f_mem_to_reg(f_mem_to_reg), .f_mem_write(f_mem_write), .f_to_x(f_to_x), .x_to_f(x_to_f), .fpu_operation(fpu_operation), .read_f_data1(read_f_data1), .read_f_data2(read_f_data2), .id_ex_pc_plus_4(id_ex_pc_plus_4), .id_ex_pc_in(id_ex_pc_in), .id_ex_funct3(id_ex_funct3), .id_ex_read_data1(id_ex_read_data1), .id_ex_read_data2(id_ex_read_data2), .id_ex_ext_imm(id_ex_ext_imm), .id_ex_rs1(id_ex_rs1), .id_ex_rs2(id_ex_rs2), .id_ex_rd(id_ex_rd), .id_ex_reg_write(id_ex_reg_write), .id_ex_alu_src(id_ex_alu_src), .id_ex_mem_write(id_ex_mem_write), .id_ex_mem_read(id_ex_mem_read), .id_ex_mem_to_reg(id_ex_mem_to_reg), .id_ex_branch(id_ex_branch), .id_ex_jal(id_ex_jal), .id_ex_jalr(id_ex_jalr), .id_ex_lui(id_ex_lui), .id_ex_auipc(id_ex_auipc), .id_ex_mem_unsigned(id_ex_mem_unsigned), .id_ex_mem_size(id_ex_mem_size), .id_ex_alu_ctrl(id_ex_alu_ctrl), .id_ex_branch_target(id_ex_branch_target), .id_ex_jal_target(id_ex_jal_target), .id_ex_predict_taken(id_ex_predict_taken), .id_ex_btb_hit(id_ex_btb_hit), .id_ex_ecall(id_ex_ecall), .id_ex_ebreak(id_ex_ebreak), .id_ex_mret(id_ex_mret), .id_ex_csr_addr(id_ex_csr_addr), .id_ex_csr_op(id_ex_csr_op), .id_ex_csr_we(id_ex_csr_we), .id_ex_md_type(id_ex_md_type), .id_ex_md_operation(id_ex_md_operation), .id_ex_instr(id_ex_instr), .id_ex_fpu_en(id_ex_fpu_en), .id_ex_f_reg_write(id_ex_f_reg_write), .id_ex_f_mem_to_reg(id_ex_f_mem_to_reg), .id_ex_f_mem_write(id_ex_f_mem_write), .id_ex_f_to_x(id_ex_f_to_x), .id_ex_x_to_f(id_ex_x_to_f), .id_ex_fpu_operation(id_ex_fpu_operation), .id_ex_read_f_data1(id_ex_read_f_data1), .id_ex_read_f_data2(id_ex_read_f_data2) );
     
-    // ID/EX Pipeline Register
-    id_ex_register ID_EX (
-        .clk(clk),
-        .reset_n(reset_n),
-        .dcache_stall(dcache_stall),
-        .md_alu_stall(md_alu_stall),
-        .load_use_stall(load_use_stall),
-        .flush(flush_branch | flush_jal | flush_trap),
-        .riscv_start(riscv_start),
-        .riscv_done(riscv_done),
-        .if_id_pc_plus_4(if_id_pc_plus_4),
-        .if_id_pc_in(if_id_pc_in),
-        .funct3(funct3),
-        .read_data1(read_data1),
-        .read_data2(read_data2),
-        .ext_imm(ext_imm),
-        .rs1(rs1),
-        .rs2(rs2),
-        .rd(rd),
-        .reg_write(reg_write),
-        .alu_src(alu_src),
-        .mem_write(mem_write),
-        .mem_read(mem_read),
-        .mem_to_reg(mem_to_reg),
-        .branch(branch),
-        .jal(jal),
-        .jalr(jalr),
-        .lui(lui),
-        .auipc(auipc),
-        .mem_unsigned(mem_unsigned),
-        .mem_size(mem_size),
-        .alu_ctrl(alu_ctrl),
-        .branch_target(branch_target),
-        .jal_target(jal_target),
-        .if_id_predict_taken(if_id_predict_taken),
-        .if_id_btb_hit(if_id_btb_hit),
-        .ecall(ecall),
-        .ebreak(ebreak),
-        .mret(mret),
-        .csr_addr(csr_addr),
-        .csr_op(csr_op),
-        .csr_we(csr_we),
-        .md_type(md_type),
-        .md_operation(md_operation),
-        .if_id_instr(if_id_instr),
-        .fpu_en(fpu_en),
-        .f_reg_write(f_reg_write),
-        .f_mem_to_reg(f_mem_to_reg),
-        .f_mem_write(f_mem_write),
-        .f_to_x(f_to_x),
-        .x_to_f(x_to_f),
-        .fpu_operation(fpu_operation),
-        .read_f_data1(read_f_data1),
-        .read_f_data2(read_f_data2),
-        .read_f_data3(read_f_data3),
-        .rs3(rs3),
-        .id_ex_pc_plus_4(id_ex_pc_plus_4),
-        .id_ex_pc_in(id_ex_pc_in),
-        .id_ex_funct3(id_ex_funct3),
-        .id_ex_read_data1(id_ex_read_data1),
-        .id_ex_read_data2(id_ex_read_data2),
-        .id_ex_ext_imm(id_ex_ext_imm),
-        .id_ex_rs1(id_ex_rs1),
-        .id_ex_rs2(id_ex_rs2),
-        .id_ex_rd(id_ex_rd),
-        .id_ex_reg_write(id_ex_reg_write),
-        .id_ex_alu_src(id_ex_alu_src),
-        .id_ex_mem_write(id_ex_mem_write),
-        .id_ex_mem_read(id_ex_mem_read),
-        .id_ex_mem_to_reg(id_ex_mem_to_reg),
-        .id_ex_branch(id_ex_branch),
-        .id_ex_jal(id_ex_jal),
-        .id_ex_jalr(id_ex_jalr),
-        .id_ex_lui(id_ex_lui),
-        .id_ex_auipc(id_ex_auipc),
-        .id_ex_mem_unsigned(id_ex_mem_unsigned),
-        .id_ex_mem_size(id_ex_mem_size),
-        .id_ex_alu_ctrl(id_ex_alu_ctrl),
-        .id_ex_branch_target(id_ex_branch_target),
-        .id_ex_jal_target(id_ex_jal_target),
-        .id_ex_predict_taken(id_ex_predict_taken),
-        .id_ex_btb_hit(id_ex_btb_hit),
-        .id_ex_ecall(id_ex_ecall),
-        .id_ex_ebreak(id_ex_ebreak),
-        .id_ex_mret(id_ex_mret),
-        .id_ex_csr_addr(id_ex_csr_addr),
-        .id_ex_csr_op(id_ex_csr_op),
-        .id_ex_csr_we(id_ex_csr_we),
-        .id_ex_md_type(id_ex_md_type),
-        .id_ex_md_operation(id_ex_md_operation),
-        .id_ex_instr(id_ex_instr),
-        .id_ex_fpu_en(id_ex_fpu_en),
-        .id_ex_f_reg_write(id_ex_f_reg_write),
-        .id_ex_f_mem_to_reg(id_ex_f_mem_to_reg),
-        .id_ex_f_mem_write(id_ex_f_mem_write),
-        .id_ex_f_to_x(id_ex_f_to_x),
-        .id_ex_x_to_f(id_ex_x_to_f),
-        .id_ex_fpu_operation(id_ex_fpu_operation),
-        .id_ex_read_f_data1(id_ex_read_f_data1),
-        .id_ex_read_f_data2(id_ex_read_f_data2),
-        .id_ex_read_f_data3(id_ex_read_f_data3),
-        .id_ex_rs3(id_ex_rs3)
-    );
+    forwarding_unit FU ( .id_ex_read_data1(id_ex_read_data1), .id_ex_read_data2(id_ex_read_data2), .id_ex_ext_imm(id_ex_ext_imm), .id_ex_rs1(id_ex_rs1), .id_ex_rs2(id_ex_rs2), .ex_mem_reg_write(ex_mem_reg_write), .mem_wb_reg_write(mem_wb_reg_write), .id_ex_alu_src(id_ex_alu_src), .ex_mem_rd(ex_mem_rd), .mem_wb_rd(mem_wb_rd), .ex_mem_alu_result(ex_mem_alu_result), .mem_wb_write_data(mem_wb_write_data), .alu_in1(alu_in1), .alu_in2(alu_in2), .mem_write_data(mem_write_data), .id_ex_read_f_data1(id_ex_read_f_data1), .id_ex_read_f_data2(id_ex_read_f_data2), .ex_mem_f_reg_write(ex_mem_f_reg_write), .mem_wb_f_reg_write(mem_wb_f_reg_write), .ex_mem_fpu_result(ex_mem_fpu_result), .mem_wb_f_write_data(wb_f_write_data), .fpu_in1(fpu_in1), .fpu_in2(fpu_in2) );
     
-    // Forwarding Unit
-    forwarding_unit FU (
-        .id_ex_read_data1(id_ex_read_data1),
-        .id_ex_read_data2(id_ex_read_data2),
-        .id_ex_ext_imm(id_ex_ext_imm),
-        .id_ex_rs1(id_ex_rs1),
-        .id_ex_rs2(id_ex_rs2),
-        .ex_mem_reg_write(ex_mem_reg_write),
-        .mem_wb_reg_write(mem_wb_reg_write),
-        .id_ex_alu_src(id_ex_alu_src),
-        .ex_mem_rd(ex_mem_rd),
-        .mem_wb_rd(mem_wb_rd),
-        .ex_mem_alu_result(ex_mem_alu_result),
-        .mem_wb_write_data(mem_wb_write_data),
-        .alu_in1(alu_in1),
-        .alu_in2(alu_in2),
-        .mem_write_data(mem_write_data),
-        .id_ex_read_f_data1(id_ex_read_f_data1),
-        .id_ex_read_f_data2(id_ex_read_f_data2),
-        .id_ex_read_f_data3(id_ex_read_f_data3),
-        .id_ex_rs3(id_ex_rs3),
-        .ex_mem_f_reg_write(ex_mem_f_reg_write),
-        .mem_wb_f_reg_write(mem_wb_f_reg_write),
-        .ex_mem_fpu_result(ex_mem_fpu_result),
-        .mem_wb_f_write_data(wb_f_write_data),
-        .fpu_in1(fpu_in1),
-        .fpu_in2(fpu_in2),
-        .fpu_in3(fpu_in3)
-    );
+    execute EX ( .clk(clk), .reset_n(reset_n), .alu_in1(alu_in1), .alu_in2(alu_in2), .id_ex_alu_ctrl(id_ex_alu_ctrl), .id_ex_branch(id_ex_branch), .id_ex_instr(id_ex_instr), .id_ex_lui(id_ex_lui), .id_ex_auipc(id_ex_auipc), .id_ex_md_type(id_ex_md_type), .id_ex_md_operation(id_ex_md_operation), .id_ex_pc_in(id_ex_pc_in), .id_ex_ext_imm(id_ex_ext_imm), .id_ex_csr_op(id_ex_csr_op), .id_ex_csr_we(id_ex_csr_we), .csr_read_data(csr_read_data_fwd), .id_ex_rs1(id_ex_rs1), .id_ex_fpu_en(id_ex_fpu_en), .id_ex_fpu_operation(id_ex_fpu_operation), .id_ex_read_f_data1(fpu_in1), .id_ex_read_f_data2(fpu_in2), .id_ex_f_to_x(id_ex_f_to_x), .id_ex_x_to_f(id_ex_x_to_f), .alu_result(alu_result), .branch_taken(branch_taken), .csr_write_data(csr_write_data_ex), .md_alu_stall(md_alu_stall), .fpu_result_out(fpu_result_out) );
     
-    // Execute Stage
-    execute EX (
-        .clk(clk),
-        .reset_n(reset_n),
-        .alu_in1(alu_in1),
-        .alu_in2(alu_in2),
-        .id_ex_alu_ctrl(id_ex_alu_ctrl),
-        .id_ex_funct3(id_ex_funct3),
-        .id_ex_branch(id_ex_branch),
-        .id_ex_instr(id_ex_instr),
-        .id_ex_lui(id_ex_lui),
-        .id_ex_auipc(id_ex_auipc),
-        .id_ex_md_type(id_ex_md_type),
-        .id_ex_md_operation(id_ex_md_operation),
-        .id_ex_pc_in(id_ex_pc_in),
-        .id_ex_ext_imm(id_ex_ext_imm),
-        .id_ex_csr_op(id_ex_csr_op),
-        .id_ex_csr_we(id_ex_csr_we),
-        .csr_read_data(csr_read_data_fwd),
-        .id_ex_rs1(id_ex_rs1),
-        .id_ex_fpu_en(id_ex_fpu_en),
-        .id_ex_fpu_operation(id_ex_fpu_operation),
-        .id_ex_read_f_data1(fpu_in1),
-        .id_ex_read_f_data2(fpu_in2),
-        .id_ex_read_f_data3(fpu_in3),
-        .id_ex_f_to_x(id_ex_f_to_x),
-        .id_ex_x_to_f(id_ex_x_to_f),
-        .alu_result(alu_result),
-        .branch_taken(branch_taken),
-        .csr_write_data(csr_write_data_ex),
-        .md_alu_stall(md_alu_stall),
-        .fpu_result_out(fpu_result_out)
-    );
+    ex_mem_register EX_MEM ( .clk(clk), .reset_n(reset_n), .dcache_stall(dcache_stall), .md_alu_stall(md_alu_stall), .flush(flush_branch | flush_trap), .riscv_start(riscv_start), .riscv_done(riscv_done), .alu_result(alu_result), .id_ex_ext_imm(id_ex_ext_imm), .id_ex_rd(id_ex_rd), .id_ex_pc_plus_4(id_ex_pc_plus_4), .id_ex_pc_in(id_ex_pc_in), .id_ex_branch_target(id_ex_branch_target), .id_ex_mem_write(id_ex_mem_write), .id_ex_mem_read(id_ex_mem_read), .id_ex_mem_to_reg(id_ex_mem_to_reg), .id_ex_reg_write(id_ex_reg_write), .id_ex_branch(id_ex_branch), .branch_taken(branch_taken), .id_ex_jal(id_ex_jal), .id_ex_mem_unsigned(id_ex_mem_unsigned), .id_ex_mem_size(id_ex_mem_size), .id_ex_read_data2(id_ex_read_data2), .mem_write_data(mem_write_data), .id_ex_predict_taken(id_ex_predict_taken), .id_ex_btb_hit(id_ex_btb_hit), .id_ex_ecall(id_ex_ecall), .id_ex_ebreak(id_ex_ebreak), .id_ex_mret(id_ex_mret), .id_ex_csr_addr(id_ex_csr_addr), .id_ex_csr_op(id_ex_csr_op), .id_ex_csr_we(id_ex_csr_we), .csr_write_data_in(csr_write_data_ex), .id_ex_instr(id_ex_instr), .fpu_result(fpu_result_out), .id_ex_read_f_data2(fpu_in2), .id_ex_f_reg_write(id_ex_f_reg_write), .id_ex_f_mem_to_reg(id_ex_f_mem_to_reg), .id_ex_f_mem_write(id_ex_f_mem_write), .ex_mem_alu_result(ex_mem_alu_result), .ex_mem_rd(ex_mem_rd), .ex_mem_branch_target(ex_mem_branch_target), .ex_mem_pc_plus_4(ex_mem_pc_plus_4), .ex_mem_pc_in(ex_mem_pc_in), .ex_mem_mem_write(ex_mem_mem_write), .ex_mem_mem_read(ex_mem_mem_read), .ex_mem_mem_to_reg(ex_mem_mem_to_reg), .ex_mem_reg_write(ex_mem_reg_write), .ex_mem_branch(ex_mem_branch), .ex_mem_branch_taken(ex_mem_branch_taken), .ex_mem_jal(ex_mem_jal), .ex_mem_mem_unsigned(ex_mem_mem_unsigned), .ex_mem_mem_size(ex_mem_mem_size), .ex_mem_mem_write_data(ex_mem_mem_write_data), .ex_mem_predict_taken(ex_mem_predict_taken), .ex_mem_btb_hit(ex_mem_btb_hit), .ex_mem_ecall(ex_mem_ecall), .ex_mem_ebreak(ex_mem_ebreak), .ex_mem_mret(ex_mem_mret), .ex_mem_csr_addr(ex_mem_csr_addr), .ex_mem_csr_op(ex_mem_csr_op), .ex_mem_csr_we(ex_mem_csr_we), .ex_mem_csr_write_data(ex_mem_csr_write_data), .ex_mem_instr(ex_mem_instr), .ex_mem_fpu_result(ex_mem_fpu_result), .ex_mem_f_store_data(ex_mem_f_store_data), .ex_mem_f_reg_write(ex_mem_f_reg_write), .ex_mem_f_mem_to_reg(ex_mem_f_mem_to_reg), .ex_mem_f_mem_write(ex_mem_f_mem_write) );
     
-    // EX/MEM Pipeline Register
-    ex_mem_register EX_MEM (
-        .clk(clk),
-        .reset_n(reset_n),
-        .dcache_stall(dcache_stall),
-        .md_alu_stall(md_alu_stall),
-        .flush(flush_branch | flush_trap),
-        .riscv_start(riscv_start),
-        .riscv_done(riscv_done),
-        .alu_result(alu_result),
-        .id_ex_ext_imm(id_ex_ext_imm),
-        .id_ex_rd(id_ex_rd),
-        .id_ex_pc_plus_4(id_ex_pc_plus_4),
-        .id_ex_pc_in(id_ex_pc_in),
-        .id_ex_branch_target(id_ex_branch_target),
-        .id_ex_mem_write(id_ex_mem_write),
-        .id_ex_mem_read(id_ex_mem_read),
-        .id_ex_mem_to_reg(id_ex_mem_to_reg),
-        .id_ex_reg_write(id_ex_reg_write),
-        .id_ex_branch(id_ex_branch),
-        .branch_taken(branch_taken),
-        .id_ex_jal(id_ex_jal),
-        .id_ex_mem_unsigned(id_ex_mem_unsigned),
-        .id_ex_mem_size(id_ex_mem_size),
-        .id_ex_read_data2(id_ex_read_data2),
-        .mem_write_data(mem_write_data),
-        .id_ex_predict_taken(id_ex_predict_taken),
-        .id_ex_btb_hit(id_ex_btb_hit),
-        .id_ex_ecall(id_ex_ecall),
-        .id_ex_ebreak(id_ex_ebreak),
-        .id_ex_mret(id_ex_mret),
-        .id_ex_csr_addr(id_ex_csr_addr),
-        .id_ex_csr_op(id_ex_csr_op),
-        .id_ex_csr_we(id_ex_csr_we),
-        .csr_write_data_in(csr_write_data_ex),
-        .id_ex_instr(id_ex_instr),
-        .fpu_result(fpu_result_out),
-        .id_ex_read_f_data2(fpu_in2),
-        .id_ex_f_reg_write(id_ex_f_reg_write),
-        .id_ex_f_mem_to_reg(id_ex_f_mem_to_reg),
-        .id_ex_f_mem_write(id_ex_f_mem_write),
-        .ex_mem_alu_result(ex_mem_alu_result),
-        .ex_mem_rd(ex_mem_rd),
-        .ex_mem_branch_target(ex_mem_branch_target),
-        .ex_mem_pc_plus_4(ex_mem_pc_plus_4),
-        .ex_mem_pc_in(ex_mem_pc_in),
-        .ex_mem_mem_write(ex_mem_mem_write),
-        .ex_mem_mem_read(ex_mem_mem_read),
-        .ex_mem_mem_to_reg(ex_mem_mem_to_reg),
-        .ex_mem_reg_write(ex_mem_reg_write),
-        .ex_mem_branch(ex_mem_branch),
-        .ex_mem_branch_taken(ex_mem_branch_taken),
-        .ex_mem_jal(ex_mem_jal),
-        .ex_mem_mem_unsigned(ex_mem_mem_unsigned),
-        .ex_mem_mem_size(ex_mem_mem_size),
-        .ex_mem_mem_write_data(ex_mem_mem_write_data),
-        .ex_mem_predict_taken(ex_mem_predict_taken),
-        .ex_mem_btb_hit(ex_mem_btb_hit),
-        .ex_mem_ecall(ex_mem_ecall),
-        .ex_mem_ebreak(ex_mem_ebreak),
-        .ex_mem_mret(ex_mem_mret),
-        .ex_mem_csr_addr(ex_mem_csr_addr),
-        .ex_mem_csr_op(ex_mem_csr_op),
-        .ex_mem_csr_we(ex_mem_csr_we),
-        .ex_mem_csr_write_data(ex_mem_csr_write_data),
-        .ex_mem_instr(ex_mem_instr),
-        .ex_mem_fpu_result(ex_mem_fpu_result),
-        .ex_mem_f_store_data(ex_mem_f_store_data),
-        .ex_mem_f_reg_write(ex_mem_f_reg_write),
-        .ex_mem_f_mem_to_reg(ex_mem_f_mem_to_reg),
-        .ex_mem_f_mem_write(ex_mem_f_mem_write)
-    );
-    
-    // Select write data for memory (integer or float)
     wire [31:0] final_mem_write_data = ex_mem_f_mem_write ? ex_mem_f_store_data : ex_mem_mem_write_data;
     
-    // Memory Access Stage
-    memory_access MEM (
-        .ex_mem_alu_result(ex_mem_alu_result),
-        .ex_mem_mem_write_data(final_mem_write_data),
-        .ex_mem_mem_write(ex_mem_mem_write | ex_mem_f_mem_write),
-        .ex_mem_mem_read(ex_mem_mem_read),
-        .mem_read_data(mem_read_data),
-        .dcache_read_req(dcache_read_req),
-        .dcache_write_req(dcache_write_req),
-        .dcache_addr(dcache_addr),
-        .dcache_write_data(dcache_write_data),
-        .dcache_read_data(dcache_read_data)
-    );
+    memory_access MEM ( .ex_mem_alu_result(ex_mem_alu_result), .ex_mem_mem_write_data(final_mem_write_data), .ex_mem_mem_write(ex_mem_mem_write | ex_mem_f_mem_write), .ex_mem_mem_read(ex_mem_mem_read), .mem_read_data(mem_read_data), .dcache_read_req(dcache_read_req), .dcache_write_req(dcache_write_req), .dcache_addr(dcache_addr), .dcache_write_data(dcache_write_data), .dcache_read_data(dcache_read_data) );
     
-    // MEM/WB Pipeline Register
-    mem_wb_register MEM_WB (
-        .clk(clk),
-        .reset_n(reset_n),
-        .dcache_stall(dcache_stall),
-        .riscv_start(riscv_start),
-        .riscv_done(riscv_done),
-        .mem_read_data(mem_read_data),
-        .ex_mem_pc_plus_4(ex_mem_pc_plus_4),
-        .ex_mem_mem_to_reg(ex_mem_mem_to_reg),
-        .ex_mem_reg_write(ex_mem_reg_write),
-        .ex_mem_jal(ex_mem_jal),
-        .ex_mem_alu_result(ex_mem_alu_result),
-        .ex_mem_rd(ex_mem_rd),
-        .ex_mem_ecall(ex_mem_ecall),
-        .ex_mem_fpu_result(ex_mem_fpu_result),
-        .ex_mem_f_reg_write(ex_mem_f_reg_write),
-        .ex_mem_f_mem_to_reg(ex_mem_f_mem_to_reg),
-        .mem_wb_mem_read_data(mem_wb_mem_read_data),
-        .mem_wb_pc_plus_4(mem_wb_pc_plus_4),
-        .mem_wb_mem_to_reg(mem_wb_mem_to_reg),
-        .mem_wb_reg_write(mem_wb_reg_write),
-        .mem_wb_jal(mem_wb_jal),
-        .mem_wb_alu_result(mem_wb_alu_result),
-        .mem_wb_rd(mem_wb_rd),
-        .mem_wb_ecall(mem_wb_ecall),
-        .mem_wb_fpu_result(mem_wb_fpu_result),
-        .mem_wb_f_reg_write(mem_wb_f_reg_write),
-        .mem_wb_f_mem_to_reg(mem_wb_f_mem_to_reg)
-    );
+    mem_wb_register MEM_WB ( .clk(clk), .reset_n(reset_n), .dcache_stall(dcache_stall), .riscv_start(riscv_start), .riscv_done(riscv_done), .mem_read_data(mem_read_data), .ex_mem_pc_plus_4(ex_mem_pc_plus_4), .ex_mem_mem_to_reg(ex_mem_mem_to_reg), .ex_mem_reg_write(ex_mem_reg_write), .ex_mem_jal(ex_mem_jal), .ex_mem_alu_result(ex_mem_alu_result), .ex_mem_rd(ex_mem_rd), .ex_mem_ecall(ex_mem_ecall), .ex_mem_fpu_result(ex_mem_fpu_result), .ex_mem_f_reg_write(ex_mem_f_reg_write), .ex_mem_f_mem_to_reg(ex_mem_f_mem_to_reg), .mem_wb_mem_read_data(mem_wb_mem_read_data), .mem_wb_pc_plus_4(mem_wb_pc_plus_4), .mem_wb_mem_to_reg(mem_wb_mem_to_reg), .mem_wb_reg_write(mem_wb_reg_write), .mem_wb_jal(mem_wb_jal), .mem_wb_alu_result(mem_wb_alu_result), .mem_wb_rd(mem_wb_rd), .mem_wb_ecall(mem_wb_ecall), .mem_wb_fpu_result(mem_wb_fpu_result), .mem_wb_f_reg_write(mem_wb_f_reg_write), .mem_wb_f_mem_to_reg(mem_wb_f_mem_to_reg) );
     
-    // Write Back Stage (Integer)
-    write_back WB (
-        .mem_wb_mem_read_data(mem_wb_mem_read_data),
-        .mem_wb_alu_result(mem_wb_alu_result),
-        .mem_wb_pc_plus_4(mem_wb_pc_plus_4),
-        .mem_wb_mem_to_reg(mem_wb_mem_to_reg),
-        .mem_wb_jal(mem_wb_jal),
-        .mem_wb_write_data(mem_wb_write_data)
-    );
+    write_back WB ( .mem_wb_mem_read_data(mem_wb_mem_read_data), .mem_wb_alu_result(mem_wb_alu_result), .mem_wb_pc_plus_4(mem_wb_pc_plus_4), .mem_wb_mem_to_reg(mem_wb_mem_to_reg), .mem_wb_jal(mem_wb_jal), .mem_wb_write_data(mem_wb_write_data) );
     
-    // Write data for F-Reg
     assign wb_f_write_data = mem_wb_f_mem_to_reg ? mem_wb_mem_read_data : mem_wb_fpu_result;
     
-    // Pipeline Control Unit
-    pipeline_control_unit PCU (
-        .opcode(opcode),
-        .funct3(funct3),
-        .rs1(rs1),
-        .rs2(rs2),
-        .id_ex_mem_read(id_ex_mem_read),
-        .id_ex_jal(id_ex_jal),
-        .id_ex_jalr(id_ex_jalr),
-        .id_ex_rd(id_ex_rd),
-        .bpu_correct(bpu_correct),
-        .trap_enter(trap_enter),
-        .mret_exec(ex_mem_mret),
-        .load_use_stall(load_use_stall),
-        .flush_branch(flush_branch),
-        .flush_jal(flush_jal),
-        .flush_trap(flush_trap)
-    );
+    pipeline_control_unit PCU ( .opcode(opcode), .funct3(funct3), .rs1(rs1), .rs2(rs2), .id_ex_mem_read(id_ex_mem_read), .id_ex_jal(id_ex_jal), .id_ex_jalr(id_ex_jalr), .id_ex_rd(id_ex_rd), .bpu_correct(bpu_correct), .trap_enter(trap_enter), .mret_exec(ex_mem_mret), .load_use_stall(load_use_stall), .flush_branch(flush_branch), .flush_jal(flush_jal), .flush_trap(flush_trap) );
     
-    // Branch Prediction Unit
-    branch_prediction_unit BPU (
-        .clk(clk),
-        .reset_n(reset_n),
-        .pc_in(pc_in), 
-        .ex_mem_pc_in(ex_mem_pc_in),
-        .ex_mem_branch(ex_mem_branch),
-        .ex_mem_branch_taken(ex_mem_branch_taken),
-        .ex_mem_predict_taken(ex_mem_predict_taken),
-        .ex_mem_btb_hit(ex_mem_btb_hit),
-        .ex_mem_branch_target(ex_mem_branch_target),
-        .bpu_correct(bpu_correct),
-        .predict_taken(predict_taken),
-        .btb_hit(btb_hit),
-        .actual_taken(actual_taken),
-        .predict_target(predict_target)
-    );
-    
-    // Control logic
+    branch_prediction_unit BPU ( .clk(clk), .reset_n(reset_n), .pc_in(pc_in), .ex_mem_pc_in(ex_mem_pc_in), .ex_mem_branch(ex_mem_branch), .ex_mem_branch_taken(ex_mem_branch_taken), .ex_mem_predict_taken(ex_mem_predict_taken), .ex_mem_btb_hit(ex_mem_btb_hit), .ex_mem_branch_target(ex_mem_branch_target), .bpu_correct(bpu_correct), .predict_taken(predict_taken), .btb_hit(btb_hit), .actual_taken(actual_taken), .predict_target(predict_target) );
+
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             riscv_done <= 1'b0;

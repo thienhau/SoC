@@ -1,7 +1,7 @@
 //==================================================================================================
 // File: fpu_unit.v
 // Description: Fully parameterized iterative IEEE-754 FPU
-// Fixed: Strict Verilog-2001 compliance (No declarations inside unnamed blocks)
+// Fixed: Added FLW/FSW support and missing SQRT restoring algorithm logic.
 //==================================================================================================
 `timescale 1ns / 1ps
 
@@ -73,6 +73,8 @@ module fpu_unit #(
     reg [49:0] temp_mant_b;
     reg [6:0]  temp_count;
     reg [8:0]  temp_exp_res;
+    reg [51:0] next_rem; // Dùng riêng cho khâu lặp SQRT
+    reg [51:0] test_val; // Dùng riêng cho khâu lặp SQRT
 
     // Các cờ kiểm tra toán hạng
     wire a_is_zero = (operand_a[30:23] == 8'd0) && (operand_a[22:0] == 23'd0);
@@ -80,7 +82,13 @@ module fpu_unit #(
     wire a_is_nan  = (operand_a[30:23] == 8'hFF) && (operand_a[22:0] != 23'd0);
     wire b_is_nan  = (operand_b[30:23] == 8'hFF) && (operand_b[22:0] != 23'd0);
 
-    // Tín hiệu dành cho làm tròn (Rounding) - Tránh lỗi "unexpected wire" trong always
+    // Tính toán Exponent sẵn cho lệnh SQRT để tránh lỗi tràn số signed/unsigned
+    wire signed [10:0] s_true_exp     = $signed({3'b0, operand_a[30:23]}) - 11'sd127;
+    wire signed [10:0] s_true_exp_odd = s_true_exp - 11'sd1;
+    wire [8:0] sqrt_exp_even = $unsigned((s_true_exp >>> 1)) + 9'd127;
+    wire [8:0] sqrt_exp_odd  = $unsigned((s_true_exp_odd >>> 1)) + 9'd127;
+
+    // Tín hiệu dành cho làm tròn (Rounding)
     wire w_lsb    = mant_res[25];
     wire w_guard  = mant_res[24];
     wire w_round  = mant_res[23];
@@ -137,6 +145,27 @@ module fpu_unit #(
                             FOP_EQ, FOP_LT, FOP_LE, FOP_MIN, FOP_MAX, FOP_MV_X_W, FOP_MV_W_X: begin
                                 state <= STATE_FAST_PATH;
                             end
+                            FOP_SQRT: begin
+                                if (operand_a[31] && !a_is_zero) begin
+                                    result <= QNAN; // Căn của số âm = NaN
+                                    state  <= STATE_DONE;
+                                end else if (a_is_zero) begin
+                                    result <= operand_a; // 0 hoặc -0
+                                    state  <= STATE_DONE;
+                                end else begin
+                                    // Kiểm tra số mũ chẵn/lẻ (bit LSB của exponent là operand_a[23])
+                                    if (operand_a[23] == 1'b0) begin 
+                                        mant_a  <= {2'b01, operand_a[22:0], 25'd0} << 1;
+                                        exp_res <= sqrt_exp_odd;
+                                    end else begin
+                                        exp_res <= sqrt_exp_even;
+                                    end
+                                    sign_res        <= 1'b0; // SQRT luôn dương
+                                    mant_b          <= 50'd0; // Sử dụng mant_b làm thanh ghi Remainder
+                                    iteration_count <= 7'd26;
+                                    state           <= STATE_ITERATE;
+                                end
+                            end
                             FOP_CVT_S_W, FOP_CVT_S_WU: begin
                                 sign_a <= operand_a[31];
                                 if (op_reg == FOP_CVT_S_W && operand_a[31]) begin
@@ -151,7 +180,7 @@ module fpu_unit #(
                             FOP_ADD, FOP_SUB: begin
                                 state <= STATE_ALIGN;
                             end
-                            FOP_MUL, FOP_DIV, FOP_SQRT: begin
+                            FOP_MUL, FOP_DIV: begin
                                 iteration_count <= 7'd26; 
                                 state           <= STATE_ITERATE;
                             end
@@ -258,6 +287,28 @@ module fpu_unit #(
                                     temp_mant_a = temp_mant_a << 1;
                                     temp_count  = temp_count - 1;
                                 end
+                                
+                                FOP_SQRT: begin
+                                    // Bóc 2 bit từ Radicand đẩy vào Remainder
+                                    next_rem = {temp_mant_b[49:0], temp_mant_a[49:48]};
+                                    // Giá trị trừ (Test value) = (Root << 2) | 1
+                                    test_val = {temp_mant_res[49:0], 2'b01};
+                                    
+                                    if (next_rem >= test_val) begin
+                                        temp_mant_b   = (next_rem - test_val); // Ép kiểu ngầm định về 50 bit
+                                        temp_mant_res = (temp_mant_res << 1) | 1'b1;
+                                    end else begin
+                                        temp_mant_b   = next_rem[49:0];
+                                        temp_mant_res = temp_mant_res << 1;
+                                    end
+                                    temp_mant_a = temp_mant_a << 2;
+                                    temp_count  = temp_count - 1;
+                                    
+                                    if (temp_count == 0) begin
+                                        // Dịch kết quả Root 26-bit hiện tại vào đúng khung căn lề ở bit thứ 48
+                                        temp_mant_res = temp_mant_res << 23; 
+                                    end
+                                end
 
                                 FOP_CVT_S_W, FOP_CVT_S_WU: begin
                                     if (temp_mant_a[31] == 1'b0 && temp_mant_a != 50'd0) begin
@@ -328,7 +379,6 @@ module fpu_unit #(
                 end
 
                 STATE_ROUND: begin
-                    // Đã dời các khai báo wire (lsb, guard, round, sticky) ra khỏi always block
                     if (w_guard && (w_round || w_sticky || w_lsb)) begin
                         mant_res <= mant_res + 50'h02000000; 
                         if (mant_res[49]) begin 

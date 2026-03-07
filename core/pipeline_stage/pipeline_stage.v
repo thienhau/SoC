@@ -69,7 +69,6 @@ module instruction_decode (
     output reg [4:0] rs1,
     output reg [4:0] rs2,
     output reg [4:0] rd,
-    output reg [4:0] rs3,
     output reg [2:0] funct3,
     output reg [6:0] opcode,
     output reg [6:0] funct7,
@@ -120,7 +119,6 @@ module instruction_decode (
         rs1 = if_id_instr[19:15];
         rs2 = if_id_instr[24:20];
         rd = if_id_instr[11:7];
-        rs3 = if_id_instr[31:27];
         u_imm = if_id_instr[31:12];
         i_imm = if_id_instr[31:20];
         s_imm = {if_id_instr[31:25], if_id_instr[11:7]};
@@ -221,7 +219,6 @@ module execute (
     input [4:0] id_ex_fpu_operation,
     input [31:0] id_ex_read_f_data1,
     input [31:0] id_ex_read_f_data2,
-    input [31:0] id_ex_read_f_data3,
     input id_ex_f_to_x,
     input id_ex_x_to_f,
     output reg [31:0] alu_result,
@@ -275,7 +272,6 @@ module execute (
         .fpu_op(id_ex_fpu_operation),
         .operand_a(fpu_operand_a),
         .operand_b(id_ex_read_f_data2),
-        .operand_c(id_ex_read_f_data3),
         .result(fpu_result),
         .fpu_stall(fpu_stall),
         .fpu_done(fpu_done)

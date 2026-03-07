@@ -50,19 +50,24 @@ module top_soc (
     // 2. KHAI BÁO CÁC TÍN HIỆU KẾT NỐI (WIRE HARNESS)
     // -------------------------------------------------------------------------
     
-    // Tín hiệu từ Core ra Cache
-    wire [15:0] sys_reset_vector;
+    // Tín hiệu từ Core ra Cache (Đã sửa địa chỉ thành 32-bit)
+    wire [31:0] sys_reset_vector;
     wire        plic_ext_irq;
     wire        cpu_wfi_sleep;
     wire        cpu_ic_req, cpu_dc_rd, cpu_dc_wr;
-    wire [15:0] cpu_ic_addr, cpu_dc_addr;
+    wire [31:0] cpu_ic_addr, cpu_dc_addr; 
     wire [31:0] cpu_ic_rdata, cpu_dc_wdata, cpu_dc_rdata;
     wire        cpu_ic_stall, cpu_dc_stall;
     wire [1:0]  cpu_dc_size;
+    
+    // Các dây thiếu của CPU Core bổ sung để tránh warning
+    wire        cpu_riscv_done;
+    wire        cpu_flush_top;
+    wire        cpu_mem_unsigned_top;
 
-    // Tín hiệu từ Cache ra Adapter
+    // Tín hiệu từ Cache ra Adapter (Đã sửa địa chỉ thành 32-bit)
     wire        ic_mem_req, dc_mem_rd, dc_mem_wr;
-    wire [15:0] ic_mem_addr, dc_mem_addr;
+    wire [31:0] ic_mem_addr, dc_mem_addr;
     wire [31:0] ic_mem_rdata, dc_mem_wdata, dc_mem_rdata;
     wire [1:0]  dc_mem_size;
     wire        ic_mem_ready, dc_mem_ready;
@@ -72,7 +77,7 @@ module top_soc (
     wire [4:0]  j_ir;
     wire        dtm_req, dtm_ack;
     wire [1:0]  dtm_op, dtm_resp;
-    wire [15:0] dtm_addr;
+    wire [31:0] dtm_addr; // Đã sửa địa chỉ thành 32-bit
     wire [31:0] dtm_wdata, dtm_rdata;
 
     // Tín hiệu Clock Gating từ System Controller
@@ -102,12 +107,31 @@ module top_soc (
     // 3. KHỐI ĐIỀU KHIỂN TRUNG TÂM (RISC-V CORE & CACHE)
     // -------------------------------------------------------------------------
     riscv_pipeline CPU_CORE (
-        .clk(clk_cpu_gated), .reset(!sys_rst_n), .riscv_start(1'b1),
-        .external_irq_in(plic_ext_irq), .reset_vector_in(sys_reset_vector), .wfi_sleep_out(cpu_wfi_sleep),
-        .icache_read_req(cpu_ic_req), .icache_addr(cpu_ic_addr), .icache_read_data(cpu_ic_rdata), .icache_stall(cpu_ic_stall),
-        .dcache_read_req(cpu_dc_rd), .dcache_write_req(cpu_dc_wr), .dcache_addr(cpu_dc_addr),
-        .dcache_write_data(cpu_dc_wdata), .dcache_read_data(cpu_dc_rdata), .dcache_stall(cpu_dc_stall),
-        .mem_size_top(cpu_dc_size)
+        .clk(clk_cpu_gated), 
+        .reset_n(sys_rst_n),              // Sửa: Đúng tên là reset_n, và truyền sys_rst_n (không đảo)
+        .riscv_start(1'b1),
+        .external_irq_in(plic_ext_irq), 
+        .reset_vector_in(sys_reset_vector), // Sửa: Truyền đúng biến reset vector
+        .riscv_done(cpu_riscv_done),      // Sửa: Nối chân output bị thiếu
+        .wfi_sleep_out(cpu_wfi_sleep),
+        
+        .icache_read_req(cpu_ic_req), 
+        .icache_addr(cpu_ic_addr), 
+        .icache_read_data(cpu_ic_rdata), 
+        .icache_hit(1'b1),                // Sửa: Nối cứng chân hit để không bị thả nổi (X)
+        .icache_stall(cpu_ic_stall),
+        
+        .dcache_read_req(cpu_dc_rd), 
+        .dcache_write_req(cpu_dc_wr), 
+        .dcache_addr(cpu_dc_addr),
+        .dcache_write_data(cpu_dc_wdata), 
+        .dcache_read_data(cpu_dc_rdata), 
+        .dcache_hit(1'b1),                // Sửa: Nối cứng chân hit
+        .dcache_stall(cpu_dc_stall),
+        
+        .flush_top(cpu_flush_top),        // Sửa: Nối chân output bị thiếu
+        .mem_size_top(cpu_dc_size),
+        .mem_unsigned_top(cpu_mem_unsigned_top) // Sửa: Nối chân output bị thiếu
     );
 
     icache I_CACHE (
@@ -144,8 +168,8 @@ module top_soc (
     // -------------------------------------------------------------------------
     // 5. ĐƯỜNG TRUYỀN CHÍNH AXI (AXI BUS WIRES)
     // -------------------------------------------------------------------------
-    // Wires cho 3 Master
-    wire [15:0] m0_araddr, m1_araddr, m1_awaddr, m2_araddr, m2_awaddr;
+    // Wires cho 3 Master (Sửa tất cả địa chỉ lên 32-bit)
+    wire [31:0] m0_araddr, m1_araddr, m1_awaddr, m2_araddr, m2_awaddr;
     wire m0_arvalid, m0_arready, m0_rvalid, m0_rready;
     wire m1_awvalid, m1_awready, m1_wvalid, m1_wready, m1_bvalid, m1_bready, m1_arvalid, m1_arready, m1_rvalid, m1_rready;
     wire m2_awvalid, m2_awready, m2_wvalid, m2_wready, m2_bvalid, m2_bready, m2_arvalid, m2_arready, m2_rvalid, m2_rready;
@@ -189,7 +213,8 @@ module top_soc (
     // -------------------------------------------------------------------------
     // 6. AXI INTERCONNECT (Bộ định tuyến dữ liệu chính)
     // -------------------------------------------------------------------------
-    wire [15:0] s0_araddr, s1_awaddr, s1_araddr, s2_awaddr, s2_araddr;
+    // Sửa tất cả địa chỉ Slave thành 32-bit
+    wire [31:0] s0_araddr, s1_awaddr, s1_araddr, s2_awaddr, s2_araddr;
     wire s0_arvalid, s0_arready, s0_rvalid, s0_rready;
     wire s1_awvalid, s1_awready, s1_wvalid, s1_wready, s1_bvalid, s1_bready, s1_arvalid, s1_arready, s1_rvalid, s1_rready;
     wire s2_awvalid, s2_awready, s2_wvalid, s2_wready, s2_bvalid, s2_bready, s2_arvalid, s2_arready, s2_rvalid, s2_rready;
@@ -199,21 +224,21 @@ module top_soc (
 
     axi_interconnect MAIN_BUS_MATRIX (
         .clk(clk_sys), .rst_n(sys_rst_n),
-        // Kết nối Master 0 (I-Cache)
+        // Master 0
         .m0_araddr(m0_araddr), .m0_arvalid(m0_arvalid), .m0_arready(m0_arready), .m0_rdata(m0_rdata), .m0_rresp(m0_rresp), .m0_rvalid(m0_rvalid), .m0_rready(m0_rready),
-        // Kết nối Master 1 (D-Cache)
+        // Master 1
         .m1_awaddr(m1_awaddr), .m1_awvalid(m1_awvalid), .m1_awready(m1_awready), .m1_wdata(m1_wdata), .m1_wstrb(m1_wstrb), .m1_wvalid(m1_wvalid), .m1_wready(m1_wready), .m1_bresp(m1_bresp), .m1_bvalid(m1_bvalid), .m1_bready(m1_bready),
         .m1_araddr(m1_araddr), .m1_arvalid(m1_arvalid), .m1_arready(m1_arready), .m1_rdata(m1_rdata), .m1_rresp(m1_rresp), .m1_rvalid(m1_rvalid), .m1_rready(m1_rready),
-        // Kết nối Master 2 (Debug Module)
+        // Master 2
         .m2_awaddr(m2_awaddr), .m2_awvalid(m2_awvalid), .m2_awready(m2_awready), .m2_wdata(m2_wdata), .m2_wstrb(m2_wstrb), .m2_wvalid(m2_wvalid), .m2_wready(m2_wready), .m2_bresp(m2_bresp), .m2_bvalid(m2_bvalid), .m2_bready(m2_bready),
         .m2_araddr(m2_araddr), .m2_arvalid(m2_arvalid), .m2_arready(m2_arready), .m2_rdata(m2_rdata), .m2_rresp(m2_rresp), .m2_rvalid(m2_rvalid), .m2_rready(m2_rready),
         
-        // Kết nối Slave 0 (ROM: 0x1000 - 0x4FFF)
+        // Slave 0
         .s0_araddr(s0_araddr), .s0_arvalid(s0_arvalid), .s0_arready(s0_arready), .s0_rdata(s0_rdata), .s0_rresp(s0_rresp), .s0_rvalid(s0_rvalid), .s0_rready(s0_rready),
-        // Kết nối Slave 1 (RAM: 0x8000 - 0xFFFF)
+        // Slave 1
         .s1_awaddr(s1_awaddr), .s1_awvalid(s1_awvalid), .s1_awready(s1_awready), .s1_wdata(s1_wdata), .s1_wstrb(s1_wstrb), .s1_wvalid(s1_wvalid), .s1_wready(s1_wready), .s1_bresp(s1_bresp), .s1_bvalid(s1_bvalid), .s1_bready(s1_bready),
         .s1_araddr(s1_araddr), .s1_arvalid(s1_arvalid), .s1_arready(s1_arready), .s1_rdata(s1_rdata), .s1_rresp(s1_rresp), .s1_rvalid(s1_rvalid), .s1_rready(s1_rready),
-        // Kết nối Slave 2 (APB: 0x5000 - 0x7FFF)
+        // Slave 2
         .s2_awaddr(s2_awaddr), .s2_awvalid(s2_awvalid), .s2_awready(s2_awready), .s2_wdata(s2_wdata), .s2_wstrb(s2_wstrb), .s2_wvalid(s2_wvalid), .s2_wready(s2_wready), .s2_bresp(s2_bresp), .s2_bvalid(s2_bvalid), .s2_bready(s2_bready),
         .s2_araddr(s2_araddr), .s2_arvalid(s2_arvalid), .s2_arready(s2_arready), .s2_rdata(s2_rdata), .s2_rresp(s2_rresp), .s2_rvalid(s2_rvalid), .s2_rready(s2_rready)
     );
@@ -235,17 +260,28 @@ module top_soc (
     // -------------------------------------------------------------------------
     // 7. PHÂN HỆ NGOẠI VI APB (APB SUBSYSTEM)
     // -------------------------------------------------------------------------
-    wire [15:0] apb_paddr;
+    wire [31:0] apb_paddr; // Sửa thành 32-bit
     wire [31:0] apb_pwdata, apb_prdata;
     wire [3:0]  apb_pstrb;
     wire        apb_psel, apb_penable, apb_pwrite, apb_pready, apb_pslverr;
 
     // --- AXI to APB Bridge ---
-    axi_to_apb_bridge BRIDGE_INST (
+    axi_to_apb_bridge #(
+        .ADDR_WIDTH(32) // Sửa: Cấu hình bắt buộc thành 32-bit
+    ) BRIDGE_INST (
         .clk(clk_sys), .rst_n(sys_rst_n),
-        .s_axi_awaddr(s2_awaddr), .s_axi_awvalid(s2_awvalid), .s_axi_awready(s2_awready), .s_axi_wdata(s2_wdata), .s_axi_wstrb(s2_wstrb), .s_axi_wvalid(s2_wvalid), .s_axi_wready(s2_wready), .s_axi_bresp(s2_bresp), .s_axi_bvalid(s2_bvalid), .s_axi_bready(s2_bready),
-        .s_axi_araddr(s2_araddr), .s_axi_arvalid(s2_arvalid), .s_axi_arready(s2_arready), .s_axi_rdata(s2_rdata), .s_axi_rresp(s2_rresp), .s_axi_rvalid(s2_rvalid), .s_axi_rready(s2_rready),
-        .m_apb_paddr(apb_paddr), .m_apb_psel(apb_psel), .m_apb_penable(apb_penable), .m_apb_pwrite(apb_pwrite), .m_apb_pwdata(apb_pwdata), .m_apb_pstrb(apb_pstrb), .m_apb_pready(apb_pready), .m_apb_prdata(apb_prdata), .m_apb_pslverr(apb_pslverr)
+        .s_axi_awaddr(s2_awaddr), .s_axi_awprot(3'b000), // Sửa: Gắn cố định prot để không bị lỗi floating
+        .s_axi_awvalid(s2_awvalid), .s_axi_awready(s2_awready), 
+        .s_axi_wdata(s2_wdata), .s_axi_wstrb(s2_wstrb), .s_axi_wvalid(s2_wvalid), .s_axi_wready(s2_wready), 
+        .s_axi_bresp(s2_bresp), .s_axi_bvalid(s2_bvalid), .s_axi_bready(s2_bready),
+        .s_axi_araddr(s2_araddr), .s_axi_arprot(3'b000), // Sửa: Gắn cố định prot
+        .s_axi_arvalid(s2_arvalid), .s_axi_arready(s2_arready), 
+        .s_axi_rdata(s2_rdata), .s_axi_rresp(s2_rresp), .s_axi_rvalid(s2_rvalid), .s_axi_rready(s2_rready),
+        
+        .m_apb_paddr(apb_paddr), .m_apb_pprot(), // Để trống output prot
+        .m_apb_psel(apb_psel), .m_apb_penable(apb_penable), .m_apb_pwrite(apb_pwrite), 
+        .m_apb_pwdata(apb_pwdata), .m_apb_pstrb(apb_pstrb), .m_apb_pready(apb_pready), 
+        .m_apb_prdata(apb_prdata), .m_apb_pslverr(apb_pslverr)
     );
 
     // --- APB Interconnect ---
@@ -258,6 +294,7 @@ module top_soc (
         .m_paddr(apb_paddr), .m_psel(apb_psel), .m_penable(apb_penable), .m_pwrite(apb_pwrite), .m_pwdata(apb_pwdata), .m_pstrb(apb_pstrb),
         .m_prdata(apb_prdata), .m_pready(apb_pready), .m_pslverr(apb_pslverr),
         
+        // (Chú ý: Topo chia sẻ bus paddr, penable, pwrite.. qua APB_BUS_MATRIX không nối các chân sX_paddr.. là có chủ ý để tiết kiệm dây, các Peripheral nối thẳng đến bus chung phía dưới. Logic hoàn toàn hợp lệ)
         .s0_psel(sel_syscon), .s0_prdata(rdata_syscon), .s0_pready(ready_syscon), .s0_pslverr(err_syscon),
         .s1_psel(sel_plic),   .s1_prdata(rdata_plic),   .s1_pready(ready_plic),   .s1_pslverr(err_plic),
         .s2_psel(sel_timer),  .s2_prdata(rdata_timer),  .s2_pready(ready_timer),  .s2_pslverr(err_timer),
@@ -283,7 +320,7 @@ module top_soc (
         
         // Quản lý năng lượng WFI
         .i_wfi_sleep(cpu_wfi_sleep),
-        .i_ext_irq(plic_ext_irq),    // Báo thức CPU khi có ngắt
+        .i_ext_irq(plic_ext_irq), 
         
         // Xuất tín hiệu Enable Clock tới các ICG
         .o_cpu_clk_en(clk_en_cpu),
@@ -302,7 +339,6 @@ module top_soc (
         .DATA_WIDTH(32),
         .NUM_IRQ(6)
     ) PLIC_INST (
-        // APB Bus Interface
         .pclk(clk_sys), 
         .presetn(sys_rst_n), 
         .paddr(apb_paddr[11:0]), 
@@ -315,34 +351,26 @@ module top_soc (
         .prdata(rdata_plic), 
         .pslverr(err_plic),
 
-        // 6 Interrupt Sources
         .irq_timer(irq_timer),  // ID 1
         .irq_uart(irq_uart),    // ID 2
         .irq_spi(irq_spi),      // ID 3
         .irq_i2c(irq_i2c),      // ID 4
         .irq_gpio(irq_gpio),    // ID 5
         .irq_accel(irq_accel),  // ID 6
-
-        // Output to CPU
         .cpu_ext_irq(plic_ext_irq)
     );
-    assign ready_plic = 1'b1; assign err_plic = 1'b0;
+    // Sửa: Đã xóa hoàn toàn "assign ready_plic = 1'b1; assign err_plic = 1'b0;" để tránh chạm chập logic
 
     // --- Timer ---
     apb_timer TIMER_INST (.pclk(clk_tmr_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_timer), .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_timer), .prdata(rdata_timer), .pslverr(err_timer), .timer_irq(irq_timer));
-    
     // --- UART ---
     apb_uart  UART_INST  (.pclk(clk_urt_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_uart),  .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_uart),  .prdata(rdata_uart),  .pslverr(err_uart),  .rx(uart_rx), .tx(uart_tx), .uart_irq(irq_uart));
-    
     // --- SPI ---
     apb_spi   SPI_INST   (.pclk(clk_spi_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_spi),   .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_spi),   .prdata(rdata_spi),   .pslverr(err_spi),   .sclk(spi_sclk), .mosi(spi_mosi), .miso(spi_miso), .cs_n(spi_cs_n), .spi_irq(irq_spi));
-    
     // --- I2C ---
     apb_i2c   I2C_INST   (.pclk(clk_i2c_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_i2c),   .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_i2c),   .prdata(rdata_i2c),   .pslverr(err_i2c),   .scl_o(i2c_scl_o), .scl_oen(i2c_scl_oen), .scl_i(i2c_scl_i), .sda_o(i2c_sda_o), .sda_oen(i2c_sda_oen), .sda_i(i2c_sda_i), .i2c_irq(irq_i2c));
-    
     // --- GPIO ---
     apb_gpio  GPIO_INST  (.pclk(clk_gpo_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_gpio),  .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_gpio),  .prdata(rdata_gpio),  .pslverr(err_gpio),  .gpio_in(gpio_in), .gpio_out(gpio_out), .gpio_dir(gpio_dir), .gpio_irq(irq_gpio));
-    
     // --- Accelerator (Dự phòng) ---
     apb_accel ACCEL_INST (.pclk(clk_acc_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_accel), .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_accel), .prdata(rdata_accel), .pslverr(err_accel), .accel_irq(irq_accel));
 
