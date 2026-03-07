@@ -13,7 +13,7 @@ module multiplier (
     output md_alu_done
 );
 
-    localparam BITS_PER_CYCLE = 32;
+    localparam BITS_PER_CYCLE = 4;
     
     wire mul_inst_w = md_type & (~md_operation[2]);
     wire is_mul = mul_inst_w && (md_operation == 3'b000);
@@ -262,7 +262,7 @@ module divider (
     output md_alu_done
 );
 
-    localparam BITS_PER_CYCLE = 32;
+    localparam BITS_PER_CYCLE = 2;
 
     wire is_div_op = md_operation[2];
     wire is_div = is_div_op && (md_operation[1:0] == 2'b00);

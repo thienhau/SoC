@@ -38,7 +38,7 @@ module axi4l_ram_slave #(
 );
 
     // Mảng bộ nhớ RAM nội bộ
-    reg [DATA_WIDTH-1:0] ram_memory [0:MEM_DEPTH-1];
+    (* ram_style = "block" *) reg [DATA_WIDTH-1:0] ram_memory [0:MEM_DEPTH-1];
 
     // Các biến cờ (Flags) điều khiển FSM AXI Handshake
     reg aw_en;

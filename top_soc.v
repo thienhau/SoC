@@ -33,9 +33,14 @@ module top_soc (
     // --- GPIO Interface ---
     input  wire [31:0] gpio_in,
     output wire [31:0] gpio_out,
-    output wire [31:0] gpio_dir
-);
+    output wire [31:0] gpio_dir,
 
+    // AXI SPI Flash Ports (Dùng để nạp code và chứa Firmware)
+    output wire        spi_flash_sck,
+    output wire        spi_flash_cs_n,
+    output wire        spi_flash_mosi,
+    input  wire        spi_flash_miso
+);
     // 1. RESET SYNCHRONIZER
     reg [2:0] rst_sync;
     always @(posedge clk_sys or negedge rst_n_pad) begin
@@ -44,7 +49,7 @@ module top_soc (
     end
     wire sys_rst_n = rst_sync[2];
 
-    // 2. KHAI BÁO CÁC TÍN HIỆU KẾT NỐI (SỬA ĐỊA CHỈ 32-BIT)
+    // 2. KHAI B�?O C�?C T�?N HIỆU KẾT N�?I (SỬA �?ỊA CHỈ 32-BIT)
     wire [31:0] sys_reset_vector;
     wire        plic_ext_irq;
     wire        cpu_wfi_sleep;
@@ -53,25 +58,32 @@ module top_soc (
     wire [31:0] cpu_ic_rdata, cpu_dc_wdata, cpu_dc_rdata;
     wire        cpu_ic_stall, cpu_dc_stall;
     wire [1:0]  cpu_dc_size;
+    
+    // THÊM: Các tín hiệu quan tr�?ng bị thiếu ở bản gốc
+    wire        cpu_ic_hit, cpu_dc_hit;
+    wire        cpu_flush;
+    wire        cpu_mem_unsigned;
+    wire        riscv_done;
+    wire        ic_cdc_resp_val, dc_cdc_resp_val;
 
     // --- Tín hiệu JTAG Internal (Nối TAP với Debug Module) ---
     wire        j_shift, j_update, j_capture, j_sel_dmi, j_tdo_dmi;
     wire [4:0]  j_ir;
 
-    // Tín hiệu giữa Cache và CDC Bridge (Miền CPU)
+    // Tín hiệu giữa Cache và CDC Bridge (Mi�?n CPU)
     wire        ic_cdc_req, dc_cdc_rd, dc_cdc_wr;
     wire [31:0] ic_cdc_addr, dc_cdc_addr;
     wire [31:0] ic_cdc_rdata, dc_cdc_wdata, dc_cdc_rdata;
     wire [1:0]  dc_cdc_size;
     wire        ic_cdc_ready, dc_cdc_ready;
-
-    // Tín hiệu từ CDC Bridge ra Adapter (Miền Bus)
+    
+    // Tín hiệu từ CDC Bridge ra Adapter (Mi�?n Bus)
     wire        ic_mem_req, dc_mem_rd, dc_mem_wr;
     wire [31:0] ic_mem_addr, dc_mem_addr;
     wire [31:0] ic_mem_rdata, dc_mem_wdata, dc_mem_rdata;
     wire [1:0]  dc_mem_size;
     wire        ic_mem_ready, dc_mem_ready;
-
+    
     // Clock Gating
     wire clk_en_cpu, clk_en_dbg, clk_en_tmr, clk_en_urt, clk_en_spi, clk_en_i2c, clk_en_gpo, clk_en_acc;
     wire clk_cpu_gated, clk_dbg_gated, clk_tmr_gated, clk_urt_gated, clk_spi_gated, clk_i2c_gated, clk_gpo_gated, clk_acc_gated;
@@ -91,13 +103,12 @@ module top_soc (
         .tms(jtag_tms),
         .tdi(jtag_tdi),
         .tdo(jtag_tdo),
-        // Các tín hiệu điều khiển TAP State Machine đưa sang Debug Module
         .o_ir(j_ir),
         .o_shift_dr(j_shift),
         .o_capture_dr(j_capture),
         .o_update_dr(j_update),
         .o_sel_dmi(j_sel_dmi),
-        .i_tdo_dmi(j_tdo_dmi) // Nhận TDO ngược lại từ DM
+        .i_tdo_dmi(j_tdo_dmi)
     );
 
     debug_module DBG_MODULE_INST (
@@ -113,7 +124,6 @@ module top_soc (
         .clk_sys(clk_dbg_gated),
         .rst_sys_n(sys_rst_n),
         
-        // Giao tiếp DMI (Nối vào AXI Master phía dưới)
         .req_sys(dtm_req),
         .op_sys(dtm_op),
         .addr_sys(dtm_addr),
@@ -123,35 +133,40 @@ module top_soc (
         .rdata_sys(dtm_rdata)
     );
 
-    // 3. KHỐI CPU CORE VÀ CACHE
+    // 3. KH�?I CPU CORE VÀ CACHE
     riscv_pipeline CPU_CORE (
         .clk(clk_cpu_gated), .reset_n(sys_rst_n), .riscv_start(1'b1),
         .external_irq_in(plic_ext_irq), .reset_vector_in(sys_reset_vector), .wfi_sleep_out(cpu_wfi_sleep),
-        .icache_read_req(cpu_ic_req), .icache_addr(cpu_ic_addr), .icache_read_data(cpu_ic_rdata), .icache_hit(1'b1), .icache_stall(cpu_ic_stall),
+        .riscv_done(riscv_done),
+        .icache_read_req(cpu_ic_req), .icache_addr(cpu_ic_addr), .icache_read_data(cpu_ic_rdata), .icache_hit(cpu_ic_hit), .icache_stall(cpu_ic_stall),
         .dcache_read_req(cpu_dc_rd), .dcache_write_req(cpu_dc_wr), .dcache_addr(cpu_dc_addr),
-        .dcache_write_data(cpu_dc_wdata), .dcache_read_data(cpu_dc_rdata), .dcache_hit(1'b1), .dcache_stall(cpu_dc_stall),
-        .mem_size_top(cpu_dc_size)
+        .dcache_write_data(cpu_dc_wdata), .dcache_read_data(cpu_dc_rdata), .dcache_hit(cpu_dc_hit), .dcache_stall(cpu_dc_stall),
+        .flush_top(cpu_flush),
+        .mem_size_top(cpu_dc_size),
+        .mem_unsigned_top(cpu_mem_unsigned)
     );
 
     instruction_cache I_CACHE (
-        .clk(clk_sys), .rst_n(sys_rst_n), .flush(1'b0),
-        .cpu_read_req(cpu_ic_req), .cpu_addr(cpu_ic_addr), .cpu_read_data(cpu_ic_rdata), .icache_stall(cpu_ic_stall),
-        .mem_read_req(ic_cdc_req), .mem_addr(ic_cdc_addr), .mem_read_data(ic_cdc_rdata), .mem_read_valid(ic_cdc_ready)
+        .clk(clk_sys), .rst_n(sys_rst_n), .flush(cpu_flush),
+        .cpu_read_req(cpu_ic_req), .cpu_addr(cpu_ic_addr), .cpu_read_data(cpu_ic_rdata), .icache_stall(cpu_ic_stall), .icache_hit(cpu_ic_hit),
+        .mem_read_req(ic_cdc_req), .mem_addr(ic_cdc_addr), .mem_read_data({32'b0, ic_cdc_rdata}), .mem_read_valid(ic_cdc_resp_val)
     );
 
     data_cache D_CACHE (
         .clk(clk_sys), .rst_n(sys_rst_n),
         .cpu_read_req(cpu_dc_rd), .cpu_write_req(cpu_dc_wr), .cpu_addr(cpu_dc_addr), .cpu_write_data(cpu_dc_wdata), 
-        .cpu_read_data(cpu_dc_rdata), .dcache_stall(cpu_dc_stall), .mem_size(cpu_dc_size),
+        .cpu_read_data(cpu_dc_rdata), .dcache_stall(cpu_dc_stall), .dcache_hit(cpu_dc_hit),
+        .mem_unsigned(cpu_mem_unsigned), .mem_size(cpu_dc_size),
         .mem_read_req(dc_cdc_rd), .mem_write_req(dc_cdc_wr), .mem_addr(dc_cdc_addr), 
-        .mem_write_data(dc_cdc_wdata), .mem_read_data(dc_cdc_rdata), .mem_size_out(dc_cdc_size), .mem_ready(dc_cdc_ready)
+        .mem_write_data(dc_cdc_wdata), .mem_read_data(dc_cdc_rdata),
+        .mem_read_valid(dc_cdc_resp_val), .mem_write_back_valid(dc_cdc_resp_val)
     );
 
-    // 4. CDC BRIDGES (KẾT NỐI MIỀN CPU VÀ BUS)
+    // 4. CDC BRIDGES (KẾT N�?I MIỀN CPU VÀ BUS)
     native_cdc_bridge I_CDC_BRG (
         .cpu_clk(clk_sys), .cpu_rst_n(sys_rst_n),
         .cpu_req_val(ic_cdc_req), .cpu_req_is_write(1'b0), .cpu_req_addr(ic_cdc_addr), .cpu_req_wdata(32'd0), .cpu_req_size(2'b10), .cpu_req_ready(ic_cdc_ready),
-        .cpu_resp_val(), .cpu_resp_rdata(ic_cdc_rdata),
+        .cpu_resp_val(ic_cdc_resp_val), .cpu_resp_rdata(ic_cdc_rdata),
         .bus_clk(clk_sys), .bus_rst_n(sys_rst_n),
         .bus_req_val(ic_mem_req), .bus_req_is_write(), .bus_req_addr(ic_mem_addr), .bus_req_wdata(), .bus_req_size(), .bus_req_ready(ic_mem_ready),
         .bus_resp_val(ic_mem_ready), .bus_resp_rdata(ic_mem_rdata)
@@ -159,14 +174,14 @@ module top_soc (
 
     native_cdc_bridge D_CDC_BRG (
         .cpu_clk(clk_sys), .cpu_rst_n(sys_rst_n),
-        .cpu_req_val(dc_cdc_rd || dc_cdc_wr), .cpu_req_is_write(dc_cdc_wr), .cpu_req_addr(dc_cdc_addr), .cpu_req_wdata(dc_cdc_wdata), .cpu_req_size(dc_cdc_size), .cpu_req_ready(dc_cdc_ready),
-        .cpu_resp_val(), .cpu_resp_rdata(dc_cdc_rdata),
+        .cpu_req_val(dc_cdc_rd || dc_cdc_wr), .cpu_req_is_write(dc_cdc_wr), .cpu_req_addr(dc_cdc_addr), .cpu_req_wdata(dc_cdc_wdata), .cpu_req_size(cpu_dc_size), .cpu_req_ready(dc_cdc_ready),
+        .cpu_resp_val(dc_cdc_resp_val), .cpu_resp_rdata(dc_cdc_rdata),
         .bus_clk(clk_sys), .bus_rst_n(sys_rst_n),
         .bus_req_val(dc_mem_rd), .bus_req_is_write(dc_mem_wr), .bus_req_addr(dc_mem_addr), .bus_req_wdata(dc_mem_wdata), .bus_req_size(dc_mem_size), .bus_req_ready(dc_mem_ready),
         .bus_resp_val(dc_mem_ready), .bus_resp_rdata(dc_mem_rdata)
     );
 
-    // 5. AXI BUS WIRES (SỬA ĐỊA CHỈ 32-BIT)
+    // 5. AXI BUS WIRES (SỬA �?ỊA CHỈ 32-BIT)
     wire [31:0] m0_araddr, m1_araddr, m1_awaddr, m2_araddr, m2_awaddr;
     wire m0_arvalid, m0_arready, m0_rvalid, m0_rready;
     wire m1_awvalid, m1_awready, m1_wvalid, m1_wready, m1_bvalid, m1_bready, m1_arvalid, m1_arready, m1_rvalid, m1_rready;
@@ -179,7 +194,10 @@ module top_soc (
         .clk(clk_sys), .rst_n(sys_rst_n),
         .cpu_read_req(ic_mem_req), .cpu_write_req(1'b0), .cpu_addr(ic_mem_addr), .cpu_wdata(32'b0), .cpu_mem_size(2'b10),
         .cpu_rdata(ic_mem_rdata), .cpu_ready(ic_mem_ready),
-        .m_axi_araddr(m0_araddr), .m_axi_arvalid(m0_arvalid), .m_axi_arready(m0_arready),
+        .m_axi_awaddr(), .m_axi_awprot(), .m_axi_awvalid(), .m_axi_awready(1'b0),
+        .m_axi_wdata(), .m_axi_wstrb(), .m_axi_wvalid(), .m_axi_wready(1'b0),
+        .m_axi_bresp(2'b0), .m_axi_bvalid(1'b0), .m_axi_bready(),
+        .m_axi_araddr(m0_araddr), .m_axi_arprot(), .m_axi_arvalid(m0_arvalid), .m_axi_arready(m0_arready),
         .m_axi_rdata(m0_rdata), .m_axi_rresp(m0_rresp), .m_axi_rvalid(m0_rvalid), .m_axi_rready(m0_rready)
     );
 
@@ -187,10 +205,10 @@ module top_soc (
         .clk(clk_sys), .rst_n(sys_rst_n),
         .cpu_read_req(dc_mem_rd), .cpu_write_req(dc_mem_wr), .cpu_addr(dc_mem_addr), .cpu_wdata(dc_mem_wdata), .cpu_mem_size(dc_mem_size),
         .cpu_rdata(dc_mem_rdata), .cpu_ready(dc_mem_ready),
-        .m_axi_awaddr(m1_awaddr), .m_axi_awvalid(m1_awvalid), .m_axi_awready(m1_awready),
+        .m_axi_awaddr(m1_awaddr), .m_axi_awprot(), .m_axi_awvalid(m1_awvalid), .m_axi_awready(m1_awready),
         .m_axi_wdata(m1_wdata), .m_axi_wstrb(m1_wstrb), .m_axi_wvalid(m1_wvalid), .m_axi_wready(m1_wready),
         .m_axi_bresp(m1_bresp), .m_axi_bvalid(m1_bvalid), .m_axi_bready(m1_bready),
-        .m_axi_araddr(m1_araddr), .m_axi_arvalid(m1_arvalid), .m_axi_arready(m1_arready),
+        .m_axi_araddr(m1_araddr), .m_axi_arprot(), .m_axi_arvalid(m1_arvalid), .m_axi_arready(m1_arready),
         .m_axi_rdata(m1_rdata), .m_axi_rresp(m1_rresp), .m_axi_rvalid(m1_rvalid), .m_axi_rready(m1_rready)
     );
 
@@ -198,15 +216,15 @@ module top_soc (
     wire        dtm_req, dtm_ack;
     wire [1:0]  dtm_op, dtm_resp;
     wire [31:0] dtm_addr, dtm_wdata, dtm_rdata;
-    
+
     dtm_axi_master M2_DTM_AXI_INST (
         .clk_sys(clk_sys), .rst_sys_n(sys_rst_n),
         .i_req(dtm_req), .i_op(dtm_op), .i_addr(dtm_addr), .i_wdata(dtm_wdata),
         .o_ack(dtm_ack), .o_resp(dtm_resp), .o_rdata(dtm_rdata),
-        .m_axi_awaddr(m2_awaddr), .m_axi_awvalid(m2_awvalid), .m_axi_awready(m2_awready),
+        .m_axi_awaddr(m2_awaddr), .m_axi_awprot(), .m_axi_awvalid(m2_awvalid), .m_axi_awready(m2_awready),
         .m_axi_wdata(m2_wdata), .m_axi_wstrb(m2_wstrb), .m_axi_wvalid(m2_wvalid), .m_axi_wready(m2_wready),
         .m_axi_bresp(m2_bresp), .m_axi_bvalid(m2_bvalid), .m_axi_bready(m2_bready),
-        .m_axi_araddr(m2_araddr), .m_axi_arvalid(m2_arvalid), .m_axi_arready(m2_arready),
+        .m_axi_araddr(m2_araddr), .m_axi_arprot(), .m_axi_arvalid(m2_arvalid), .m_axi_arready(m2_arready),
         .m_axi_rdata(m2_rdata), .m_axi_rresp(m2_rresp), .m_axi_rvalid(m2_rvalid), .m_axi_rready(m2_rready)
     );
 
@@ -233,9 +251,53 @@ module top_soc (
         .s2_araddr(s2_araddr), .s2_arvalid(s2_arvalid), .s2_arready(s2_arready), .s2_rdata(s2_rdata), .s2_rresp(s2_rresp), .s2_rvalid(s2_rvalid), .s2_rready(s2_rready)
     );
 
-    axi4l_rom_slave BOOT_ROM_INST (.clk(clk_sys), .rst_n(sys_rst_n), .s_axi_araddr(s0_araddr), .s_axi_arvalid(s0_arvalid), .s_axi_arready(s0_arready), .s_axi_rdata(s0_rdata), .s_axi_rresp(s0_rresp), .s_axi_rvalid(s0_rvalid), .s_axi_rready(s0_rready));
+    axi4l_rom_slave BOOT_ROM_INST (.clk(clk_sys), .rst_n(sys_rst_n), .s_axi_awaddr(32'b0), .s_axi_awvalid(1'b0), .s_axi_awready(), .s_axi_wdata(32'b0), .s_axi_wstrb(4'b0), .s_axi_wvalid(1'b0), .s_axi_wready(), .s_axi_bresp(), .s_axi_bvalid(), .s_axi_bready(1'b0), .s_axi_araddr(s0_araddr), .s_axi_arvalid(s0_arvalid), .s_axi_arready(s0_arready), .s_axi_rdata(s0_rdata), .s_axi_rresp(s0_rresp), .s_axi_rvalid(s0_rvalid), .s_axi_rready(s0_rready));
     axi4l_ram_slave SYSTEM_RAM_INST (.clk(clk_sys), .rst_n(sys_rst_n), .s_axi_awaddr(s1_awaddr), .s_axi_awvalid(s1_awvalid), .s_axi_awready(s1_awready), .s_axi_wdata(s1_wdata), .s_axi_wstrb(s1_wstrb), .s_axi_wvalid(s1_wvalid), .s_axi_wready(s1_wready), .s_axi_bresp(s1_bresp), .s_axi_bvalid(s1_bvalid), .s_axi_bready(s1_bready), .s_axi_araddr(s1_araddr), .s_axi_arvalid(s1_arvalid), .s_axi_arready(s1_arready), .s_axi_rdata(s1_rdata), .s_axi_rresp(s1_rresp), .s_axi_rvalid(s1_rvalid), .s_axi_rready(s1_rready));
 
+    // Wires cho S3 của AXI Interconnect
+    wire [3:0]  axi_s3_arid;
+    wire [31:0] axi_s3_araddr;
+    wire [7:0]  axi_s3_arlen;
+    wire [2:0]  axi_s3_arsize;
+    wire [1:0]  axi_s3_arburst;
+    wire        axi_s3_arvalid;
+    wire        axi_s3_arready;
+
+    wire [3:0]  axi_s3_rid;
+    wire [31:0] axi_s3_rdata;
+    wire [1:0]  axi_s3_rresp;
+    wire        axi_s3_rlast;
+    wire        axi_s3_rvalid;
+    wire        axi_s3_rready;
+
+    // Instantiate AXI SPI Flash Controller
+    axi_spi_flash u_axi_spi_flash (
+        .aclk       (clk_sys),
+        .aresetn    (rst_n_pad),
+
+        // Nối vào bus AXI (Kênh Read)
+        .arid       (axi_s3_arid),
+        .araddr     (axi_s3_araddr),
+        .arlen      (axi_s3_arlen),
+        .arsize     (axi_s3_arsize),
+        .arburst    (axi_s3_arburst),
+        .arvalid    (axi_s3_arvalid),
+        .arready    (axi_s3_arready),
+
+        .rid        (axi_s3_rid),
+        .rdata      (axi_s3_rdata),
+        .rresp      (axi_s3_rresp),
+        .rlast      (axi_s3_rlast),
+        .rvalid     (axi_s3_rvalid),
+        .rready     (axi_s3_rready),
+
+        // Nối ra chân vật lý của FPGA
+        .spi_cs_n   (spi_flash_cs_n),
+        .spi_sck    (spi_flash_sck),
+        .spi_mosi   (spi_flash_mosi),
+        .spi_miso   (spi_flash_miso)
+    );
+    
     // 7. PHÂN HỆ APB
     wire [31:0] apb_paddr;
     wire [31:0] apb_pwdata, apb_prdata;
@@ -246,7 +308,7 @@ module top_soc (
         .clk(clk_sys), .rst_n(sys_rst_n),
         .s_axi_awaddr(s2_awaddr), .s_axi_awprot(3'b000), .s_axi_awvalid(s2_awvalid), .s_axi_awready(s2_awready), .s_axi_wdata(s2_wdata), .s_axi_wstrb(s2_wstrb), .s_axi_wvalid(s2_wvalid), .s_axi_wready(s2_wready), .s_axi_bresp(s2_bresp), .s_axi_bvalid(s2_bvalid), .s_axi_bready(s2_bready),
         .s_axi_araddr(s2_araddr), .s_axi_arprot(3'b000), .s_axi_arvalid(s2_arvalid), .s_axi_arready(s2_arready), .s_axi_rdata(s2_rdata), .s_axi_rresp(s2_rresp), .s_axi_rvalid(s2_rvalid), .s_axi_rready(s2_rready),
-        .m_apb_paddr(apb_paddr), .m_apb_psel(apb_psel), .m_apb_penable(apb_penable), .m_apb_pwrite(apb_pwrite), .m_apb_pwdata(apb_pwdata), .m_apb_pstrb(apb_pstrb), .m_apb_pready(apb_pready), .m_apb_prdata(apb_prdata), .m_apb_pslverr(apb_pslverr)
+        .m_apb_paddr(apb_paddr), .m_apb_pprot(), .m_apb_psel(apb_psel), .m_apb_penable(apb_penable), .m_apb_pwrite(apb_pwrite), .m_apb_pwdata(apb_pwdata), .m_apb_pstrb(apb_pstrb), .m_apb_pready(apb_pready), .m_apb_prdata(apb_prdata), .m_apb_pslverr(apb_pslverr)
     );
 
     wire sel_syscon, sel_plic, sel_timer, sel_uart, sel_spi, sel_i2c, sel_gpio, sel_accel;
@@ -256,23 +318,21 @@ module top_soc (
 
     apb_interconnect APB_BUS_MATRIX (
         .m_paddr(apb_paddr), .m_psel(apb_psel), .m_penable(apb_penable), .m_pwrite(apb_pwrite), .m_pwdata(apb_pwdata), .m_pstrb(apb_pstrb), .m_prdata(apb_prdata), .m_pready(apb_pready), .m_pslverr(apb_pslverr),
-        .s0_psel(sel_syscon), .s0_prdata(rdata_syscon), .s0_pready(ready_syscon), .s0_pslverr(err_syscon),
-        .s1_psel(sel_plic),   .s1_prdata(rdata_plic),   .s1_pready(ready_plic),   .s1_pslverr(err_plic),
-        .s2_psel(sel_timer),  .s2_prdata(rdata_timer),  .s2_pready(ready_timer),  .s2_pslverr(err_timer),
-        .s3_psel(sel_uart),   .s3_prdata(rdata_uart),   .s3_pready(ready_uart),   .s3_pslverr(err_uart),
-        .s4_psel(sel_spi),    .s4_prdata(rdata_spi),    .s4_pready(ready_spi),    .s4_pslverr(err_spi),
-        .s5_psel(sel_i2c),    .s5_prdata(rdata_i2c),    .s5_pready(ready_i2c),    .s5_pslverr(err_i2c),
-        .s6_psel(sel_gpio),   .s6_prdata(rdata_gpio),   .s6_pready(ready_gpio),   .s6_pslverr(err_gpio),
-        .s7_psel(sel_accel),  .s7_prdata(rdata_accel),  .s7_pready(ready_accel),  .s7_pslverr(err_accel)
+        .s0_psel(sel_syscon), .s0_paddr(), .s0_penable(), .s0_pwrite(), .s0_pwdata(), .s0_pstrb(), .s0_prdata(rdata_syscon), .s0_pready(ready_syscon), .s0_pslverr(err_syscon),
+        .s1_psel(sel_plic),   .s1_paddr(), .s1_penable(), .s1_pwrite(), .s1_pwdata(), .s1_pstrb(), .s1_prdata(rdata_plic),   .s1_pready(ready_plic),   .s1_pslverr(err_plic),
+        .s2_psel(sel_timer),  .s2_paddr(), .s2_penable(), .s2_pwrite(), .s2_pwdata(), .s2_pstrb(), .s2_prdata(rdata_timer),  .s2_pready(ready_timer),  .s2_pslverr(err_timer),
+        .s3_psel(sel_uart),   .s3_paddr(), .s3_penable(), .s3_pwrite(), .s3_pwdata(), .s3_pstrb(), .s3_prdata(rdata_uart),   .s3_pready(ready_uart),   .s3_pslverr(err_uart),
+        .s4_psel(sel_spi),    .s4_paddr(), .s4_penable(), .s4_pwrite(), .s4_pwdata(), .s4_pstrb(), .s4_prdata(rdata_spi),    .s4_pready(ready_spi),    .s4_pslverr(err_spi),
+        .s5_psel(sel_i2c),    .s5_paddr(), .s5_penable(), .s5_pwrite(), .s5_pwdata(), .s5_pstrb(), .s5_prdata(rdata_i2c),    .s5_pready(ready_i2c),    .s5_pslverr(err_i2c),
+        .s6_psel(sel_gpio),   .s6_paddr(), .s6_penable(), .s6_pwrite(), .s6_pwdata(), .s6_pstrb(), .s6_prdata(rdata_gpio),   .s6_pready(ready_gpio),   .s6_pslverr(err_gpio),
+        .s7_psel(sel_accel),  .s7_paddr(), .s7_penable(), .s7_pwrite(), .s7_pwdata(), .s7_pstrb(), .s7_prdata(rdata_accel),  .s7_pready(ready_accel),  .s7_pslverr(err_accel)
     );
 
     // 8. NGOẠI VI CỤ THỂ
     wire irq_timer, irq_uart, irq_spi, irq_i2c, irq_gpio, irq_accel;
 
-    apb_syscon SYSCON_INST (.pclk(clk_sys), .presetn(sys_rst_n), .psel(sel_syscon), .penable(apb_penable), .pwrite(apb_pwrite), .paddr(apb_paddr), .pwdata(apb_pwdata), .pready(ready_syscon), .prdata(rdata_syscon), .pslverr(err_syscon), .o_reset_vector(sys_reset_vector), .i_wfi_sleep(cpu_wfi_sleep), .i_ext_irq(plic_ext_irq), .o_cpu_clk_en(clk_en_cpu), .o_dbg_clk_en(clk_en_dbg), .o_tmr_clk_en(clk_en_tmr), .o_urt_clk_en(clk_en_urt), .o_spi_clk_en(clk_en_spi), .o_i2c_clk_en(clk_en_i2c), .o_gpo_clk_en(clk_en_gpo), .o_acc_clk_en(clk_en_acc));
-    
+    apb_syscon SYSCON_INST (.pclk(clk_sys), .presetn(sys_rst_n), .paddr(apb_paddr[15:0]), .psel(sel_syscon), .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pready(ready_syscon), .prdata(rdata_syscon), .pslverr(err_syscon), .o_reset_vector(sys_reset_vector), .i_wfi_sleep(cpu_wfi_sleep), .i_ext_irq(plic_ext_irq), .o_cpu_clk_en(clk_en_cpu), .o_dbg_clk_en(clk_en_dbg), .o_tmr_clk_en(clk_en_tmr), .o_urt_clk_en(clk_en_urt), .o_spi_clk_en(clk_en_spi), .o_i2c_clk_en(clk_en_i2c), .o_gpo_clk_en(clk_en_gpo), .o_acc_clk_en(clk_en_acc));
     apb_interrupt_controller PLIC_INST (.pclk(clk_sys), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_plic), .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_plic), .prdata(rdata_plic), .pslverr(err_plic), .irq_timer(irq_timer), .irq_uart(irq_uart), .irq_spi(irq_spi), .irq_i2c(irq_i2c), .irq_gpio(irq_gpio), .irq_accel(irq_accel), .cpu_ext_irq(plic_ext_irq));
-
     apb_timer TIMER_INST (.pclk(clk_tmr_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_timer), .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_timer), .prdata(rdata_timer), .pslverr(err_timer), .timer_irq(irq_timer));
     apb_uart  UART_INST  (.pclk(clk_urt_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_uart),  .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_uart),  .prdata(rdata_uart),  .pslverr(err_uart),  .rx(uart_rx), .tx(uart_tx), .uart_irq(irq_uart));
     apb_spi   SPI_INST   (.pclk(clk_spi_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_spi),   .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_spi),   .prdata(rdata_spi),   .pslverr(err_spi),   .sclk(spi_sclk), .mosi(spi_mosi), .miso(spi_miso), .cs_n(spi_cs_n), .spi_irq(irq_spi));
