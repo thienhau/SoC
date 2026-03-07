@@ -43,7 +43,7 @@ module apb_interconnect #(
     input  wire                   s2_pslverr
 );
 
-    // Broadcast tín hiệu
+// Broadcast tín hiệu
     assign s_paddr   = m_paddr;
     assign s_pprot   = m_pprot;
     assign s_penable = m_penable;
@@ -51,37 +51,36 @@ module apb_interconnect #(
     assign s_pwdata  = m_pwdata;
     assign s_pstrb   = m_pstrb;
 
-    // Giải mã địa chỉ dựa trên bit [11:8]
-    wire dec_syscon = (m_paddr[11:8] == 4'h0); // 0x40xx
-    wire dec_gpio   = (m_paddr[11:8] == 4'h1); // 0x41xx
-    wire dec_plic   = (m_paddr[11:8] == 4'h2); // 0x42xx
-    wire dec_err    = !(dec_syscon || dec_gpio || dec_plic);
+    // GIẢI MÃ ĐỊA CHỈ: Kiểm tra vùng 0x5xxx và phân dải bằng bit [11:8]
+    // Vì Bridge chỉ vứt địa chỉ vào đây, ta biết chắc nó đã nằm trong 0x5000-0x7FFF
+    // Ta lấy paddr[11:8] làm định tuyến.
+    wire dec_syscon = (m_paddr[11:8] == 4'h0); // 0x50xx
+    wire dec_plic   = (m_paddr[11:8] == 4'h1); // 0x51xx
+    wire dec_timer  = (m_paddr[11:8] == 4'h2); // 0x52xx
+    wire dec_uart   = (m_paddr[11:8] == 4'h3); // 0x53xx
+    wire dec_spi    = (m_paddr[11:8] == 4'h4); // 0x54xx
+    wire dec_i2c    = (m_paddr[11:8] == 4'h5); // 0x55xx
+    wire dec_gpio   = (m_paddr[11:8] == 4'h6); // 0x56xx
+    wire dec_accel  = (m_paddr[11:8] == 4'h7); // 0x57xx
 
-    // Kích hoạt PSEL
     assign s0_psel = m_psel && dec_syscon;
-    assign s1_psel = m_psel && dec_gpio;
-    assign s2_psel = m_psel && dec_plic;
+    assign s1_psel = m_psel && dec_plic;
+    assign s2_psel = m_psel && dec_timer;
+    assign s3_psel = m_psel && dec_uart;
+    assign s4_psel = m_psel && dec_spi;
+    assign s5_psel = m_psel && dec_i2c;
+    assign s6_psel = m_psel && dec_gpio;
+    assign s7_psel = m_psel && dec_accel;
 
-    // Mux phản hồi về Master
     always @(*) begin
-        if (dec_syscon) begin
-            m_prdata  = s0_prdata;
-            m_pready  = s0_pready;
-            m_pslverr = s0_pslverr;
-        end else if (dec_gpio) begin
-            m_prdata  = s1_prdata;
-            m_pready  = s1_pready;
-            m_pslverr = s1_pslverr;
-        end else if (dec_plic) begin
-            m_prdata  = s2_prdata;
-            m_pready  = s2_pready;
-            m_pslverr = s2_pslverr;
-        end else begin
-            // Trả về lỗi nếu cố truy cập ngoại vi không tồn tại
-            m_prdata  = 32'hDEADBEEF;
-            m_pready  = 1'b1;
-            m_pslverr = m_psel; // Chỉ báo lỗi khi có Select
-        end
+        if      (dec_syscon) {m_prdata, m_pready, m_pslverr} = {s0_prdata, s0_pready, s0_pslverr};
+        else if (dec_plic)   {m_prdata, m_pready, m_pslverr} = {s1_prdata, s1_pready, s1_pslverr};
+        else if (dec_timer)  {m_prdata, m_pready, m_pslverr} = {s2_prdata, s2_pready, s2_pslverr};
+        else if (dec_uart)   {m_prdata, m_pready, m_pslverr} = {s3_prdata, s3_pready, s3_pslverr};
+        else if (dec_spi)    {m_prdata, m_pready, m_pslverr} = {s4_prdata, s4_pready, s4_pslverr};
+        else if (dec_i2c)    {m_prdata, m_pready, m_pslverr} = {s5_prdata, s5_pready, s5_pslverr};
+        else if (dec_gpio)   {m_prdata, m_pready, m_pslverr} = {s6_prdata, s6_pready, s6_pslverr};
+        else if (dec_accel)  {m_prdata, m_pready, m_pslverr} = {s7_prdata, s7_pready, s7_pslverr};
+        else                 {m_prdata, m_pready, m_pslverr} = {32'hDEADBEEF, 1'b1, m_psel}; // Báo lỗi nếu địa chỉ không hợp lệ
     end
-
 endmodule

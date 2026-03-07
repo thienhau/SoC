@@ -1,0 +1,55 @@
+`timescale 1ns / 1ps
+
+module native_cdc_bridge (
+    // CPU Domain (400MHz)
+    input  wire        cpu_clk,
+    input  wire        cpu_rst_n,
+    input  wire        cpu_req_val,
+    input  wire        cpu_req_is_write,
+    input  wire [15:0] cpu_req_addr,
+    input  wire [31:0] cpu_req_wdata,
+    input  wire [1:0]  cpu_req_size,
+    output wire        cpu_req_ready, // Báo rảnh cho Cache
+    
+    output wire        cpu_resp_val,
+    output wire [31:0] cpu_resp_rdata,
+
+    // Bus Domain (300MHz) - Nối vào axi_master_adapter
+    input  wire        bus_clk,
+    input  wire        bus_rst_n,
+    output wire        bus_req_val,
+    output wire        bus_req_is_write,
+    output wire [15:0] bus_req_addr,
+    output wire [31:0] bus_req_wdata,
+    output wire [1:0]  bus_req_size,
+    input  wire        bus_req_ready,
+    
+    input  wire        bus_resp_val,
+    input  wire [31:0] bus_resp_rdata
+);
+
+    // Kênh Request (CPU -> Bus)
+    wire [50:0] req_wdata = {cpu_req_is_write, cpu_req_addr, cpu_req_wdata, cpu_req_size};
+    wire [50:0] req_rdata;
+    wire req_full, req_empty;
+    
+    async_fifo #(.DATA_WIDTH(51), .ADDR_WIDTH(4)) REQ_FIFO (
+        .wclk(cpu_clk), .wrst_n(cpu_rst_n), .winc(cpu_req_val && !req_full), .wdata(req_wdata), .wfull(req_full),
+        .rclk(bus_clk), .rrst_n(bus_rst_n), .rinc(bus_req_ready && !req_empty), .rdata(req_rdata), .rempty(req_empty)
+    );
+    
+    assign cpu_req_ready = !req_full;
+    assign bus_req_val   = !req_empty;
+    assign {bus_req_is_write, bus_req_addr, bus_req_wdata, bus_req_size} = req_rdata;
+
+    // Kênh Response (Bus -> CPU)
+    wire resp_full, resp_empty;
+    
+    async_fifo #(.DATA_WIDTH(32), .ADDR_WIDTH(4)) RESP_FIFO (
+        .wclk(bus_clk), .wrst_n(bus_rst_n), .winc(bus_resp_val && !resp_full), .wdata(bus_resp_rdata), .wfull(resp_full),
+        .rclk(cpu_clk), .rrst_n(cpu_rst_n), .rinc(!resp_empty), .rdata(cpu_resp_rdata), .rempty(resp_empty)
+    );
+    
+    assign cpu_resp_val = !resp_empty;
+
+endmodule

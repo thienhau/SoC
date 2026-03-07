@@ -1,162 +1,178 @@
-module interrupt_controller (
-    input clk,
-    input reset,
-    input irq_accel,  // ID = 1
-    input irq_uart,   // ID = 2
-    input irq_spi,    // ID = 3
-    input irq_gpio,   // ID = 4
-    input [11:0] cpu_addr,
-    input cpu_read_req,
-    input cpu_write_req,
-    input [31:0] cpu_write_data,
-    output reg [31:0] cpu_read_data,
-    output cpu_ext_irq
+`timescale 1ns / 1ps
+
+module apb_interrupt_controller #(
+    parameter ADDR_WIDTH = 12,
+    parameter DATA_WIDTH = 32,
+    parameter NUM_IRQ    = 6    // Số lượng ngắt: Timer, UART, SPI, I2C, GPIO, Accel
+)(
+    // --- APB4 Slave Interface ---
+    input  wire                   pclk,
+    input  wire                   presetn,
+    input  wire [ADDR_WIDTH-1:0]  paddr,
+    input  wire                   psel,
+    input  wire                   penable,
+    input  wire                   pwrite,
+    input  wire [DATA_WIDTH-1:0]  pwdata,
+    input  wire [3:0]             pstrb,
+    output reg                    pready,
+    output reg  [DATA_WIDTH-1:0]  prdata,
+    output reg                    pslverr,
+
+    // --- Interrupt Sources (Từ các Peripheral) ---
+    input  wire                   irq_timer, // ID = 1
+    input  wire                   irq_uart,  // ID = 2
+    input  wire                   irq_spi,   // ID = 3
+    input  wire                   irq_i2c,   // ID = 4
+    input  wire                   irq_gpio,  // ID = 5
+    input  wire                   irq_accel, // ID = 6
+
+    // --- Signal to CPU ---
+    output wire                   cpu_ext_irq
 );
-    // ---------------------------------------------------------
-    // 1. Internal Register and Wire Declarations
-    // ---------------------------------------------------------
-    reg [4:1] ie;             // Interrupt Enable Register
-    reg [3:0] count_1, count_2, count_3, count_4; // Queuing counters (max 15 events per ID)
-    reg [4:1] overflow;       // Error flags triggered when a counter exceeds its limit
-    reg [2:0] last_served_id; // Round-Robin pointer to track the last processed ID
+
+    // Gom các tín hiệu ngắt vào 1 mảng (chú ý: ID bắt đầu từ 1 đến NUM_IRQ)
+    // Bit 0 không dùng (ID = 0 mang ý nghĩa No Interrupt)
+    wire [NUM_IRQ:1] raw_irq = {irq_accel, irq_gpio, irq_i2c, irq_spi, irq_uart, irq_timer};
+
+    // =========================================================
+    // 1. ĐỒNG BỘ HÓA & EDGE DETECTION (CDC Safe)
+    // =========================================================
+    reg [NUM_IRQ:1] irq_sync1, irq_sync2, irq_sync3;
     
-    // Delayed registers for edge detection logic
-    reg irq_accel_d, irq_uart_d, irq_spi_d, irq_gpio_d;
+    always @(posedge pclk or negedge presetn) begin
+        if (!presetn) {irq_sync3, irq_sync2, irq_sync1} <= 0;
+        else          {irq_sync3, irq_sync2, irq_sync1} <= {irq_sync2, irq_sync1, raw_irq};
+    end
 
-    // ---------------------------------------------------------
-    // 2. Edge Detection and Control Signal Logic
-    // ---------------------------------------------------------
-    // Detect rising edges of incoming interrupt signals
-    wire edge_1 = irq_accel & ~irq_accel_d;
-    wire edge_2 = irq_uart  & ~irq_uart_d;
-    wire edge_3 = irq_spi   & ~irq_spi_d;
-    wire edge_4 = irq_gpio  & ~irq_gpio_d;
+    // Phát hiện cạnh lên sau khi đã đồng bộ
+    wire [NUM_IRQ:1] irq_edge = irq_sync2 & ~irq_sync3;
 
-    // Detect CPU "Complete" write command for each specific ID
-    wire complete_1 = (cpu_write_req && cpu_addr == 12'h004 && cpu_write_data == 32'd1);
-    wire complete_2 = (cpu_write_req && cpu_addr == 12'h004 && cpu_write_data == 32'd2);
-    wire complete_3 = (cpu_write_req && cpu_addr == 12'h004 && cpu_write_data == 32'd3);
-    wire complete_4 = (cpu_write_req && cpu_addr == 12'h004 && cpu_write_data == 32'd4);
+    // =========================================================
+    // 2. INTERNAL REGISTERS & COUNTERS
+    // =========================================================
+    // Memory Map:
+    // 0x000: IE (Interrupt Enable) - R/W
+    // 0x004: CLAIM_COMPLETE        - R (Get ID) / W (Ack ID)
+    // 0x008: OVERFLOW_FLAGS        - R (Đọc tự xóa cờ - Clear on Read)
+    // 0x00C: PENDING_STATUS        - R (Xem ngắt nào đang có count > 0)
+    
+    reg  [NUM_IRQ:1] ie;
+    reg  [3:0]       counters [1:NUM_IRQ]; // Mảng 6 counter 4-bit
+    reg  [NUM_IRQ:1] overflow;
+    reg  [2:0]       last_served_id;
+    
+    wire [NUM_IRQ:1] active_irq;
+    
+    // Generate active signals
+    genvar g;
+    generate
+        for (g = 1; g <= NUM_IRQ; g = g + 1) begin : GEN_ACTIVE
+            assign active_irq[g] = (counters[g] > 0) & ie[g];
+        end
+    endgenerate
 
-    // An interrupt is active only if its counter > 0 AND it is enabled
-    wire [4:1] active_irq;
-    assign active_irq[1] = (count_1 > 0) & ie[1];
-    assign active_irq[2] = (count_2 > 0) & ie[2];
-    assign active_irq[3] = (count_3 > 0) & ie[3];
-    assign active_irq[4] = (count_4 > 0) & ie[4];
+    assign cpu_ext_irq = (|active_irq); // Báo ngắt ra CPU nếu có ít nhất 1 ngắt active
 
-    // Global external interrupt signal sent to the CPU
-    assign cpu_ext_irq = (active_irq != 4'b0000);
+    // Tín hiệu báo hoàn thành từ APB
+    wire       apb_write   = psel && penable && pwrite;
+    wire       apb_read    = psel && !penable && !pwrite;
+    wire       is_complete = apb_write && (paddr[11:0] == 12'h004);
+    wire [2:0] complete_id = pwdata[2:0];
 
-    // ---------------------------------------------------------
-    // 3. Sequential Logic: Counters and State Updates
-    // ---------------------------------------------------------
-    always @(posedge clk) begin
-        if (reset) begin
-            ie <= 4'b0000;
-            overflow <= 4'b0000;
-            count_1 <= 0; count_2 <= 0; count_3 <= 0; count_4 <= 0;
-            irq_accel_d <= 0; irq_uart_d <= 0; irq_spi_d <= 0; irq_gpio_d <= 0;
+    // =========================================================
+    // 3. QUEUE COUNTERS LOGIC
+    // =========================================================
+    integer i;
+    always @(posedge pclk or negedge presetn) begin
+        if (!presetn) begin
+            for (i = 1; i <= NUM_IRQ; i = i + 1) counters[i] <= 4'd0;
+            overflow <= 0;
             last_served_id <= 3'd0;
         end else begin
-            // Shift interrupt signals into delay registers
-            irq_accel_d <= irq_accel;
-            irq_uart_d  <= irq_uart;
-            irq_spi_d   <= irq_spi;
-            irq_gpio_d  <= irq_gpio;
-
-            // Handle CPU writes to the Interrupt Enable (IE) register
-            if (cpu_write_req && cpu_addr == 12'h000) ie <= cpu_write_data[4:1];
-
-            // Counter and Overflow Logic for ID 1
-            if (edge_1) begin
-                if (count_1 < 15) count_1 <= count_1 + 1;
-                else overflow[1] <= 1'b1; // Trigger overflow flag if limit reached
-            end else if (complete_1 && count_1 > 0) begin
-                count_1 <= count_1 - 1; // Decrement when CPU finishes processing
+            // Xử lý song song cho tất cả các Counter
+            for (i = 1; i <= NUM_IRQ; i = i + 1) begin
+                // Nếu vừa có cạnh lên VÀ không bị CPU reset cùng lúc
+                if (irq_edge[i]) begin
+                    if (counters[i] < 4'd15) counters[i] <= counters[i] + 1;
+                    else                     overflow[i] <= 1'b1;
+                end 
+                // CPU xác nhận hoàn thành ngắt (giảm counter)
+                else if (is_complete && (complete_id == i) && (counters[i] > 0)) begin
+                    counters[i] <= counters[i] - 1;
+                end
+            end
+            
+            // Xóa cờ overflow khi CPU đọc thanh ghi 0x008 (Clear-on-read)
+            if (apb_read && (paddr[11:0] == 12'h008)) begin
+                overflow <= 0;
             end
 
-            // Counter and Overflow Logic for ID 2
-            if (edge_2) begin
-                if (count_2 < 15) count_2 <= count_2 + 1;
-                else overflow[2] <= 1'b1;
-            end else if (complete_2 && count_2 > 0) begin
-                count_2 <= count_2 - 1;
+            // Cập nhật Round-Robin pointer
+            if (is_complete && (complete_id >= 1) && (complete_id <= NUM_IRQ)) begin
+                last_served_id <= complete_id;
             end
-
-            // Counter and Overflow Logic for ID 3
-            if (edge_3) begin
-                if (count_3 < 15) count_3 <= count_3 + 1;
-                else overflow[3] <= 1'b1;
-            end else if (complete_3 && count_3 > 0) begin
-                count_3 <= count_3 - 1;
-            end
-
-            // Counter and Overflow Logic for ID 4
-            if (edge_4) begin
-                if (count_4 < 15) count_4 <= count_4 + 1;
-                else overflow[4] <= 1'b1;
-            end else if (complete_4 && count_4 > 0) begin
-                count_4 <= count_4 - 1;
-            end
-
-            // Clear-on-read: Reset overflow flags when CPU reads from the error register
-            if (cpu_read_req && cpu_addr == 12'h008) overflow <= 4'b0000;
-
-            // Update Round-Robin pointer based on the last completed ID
-            if (complete_1) last_served_id <= 3'd1;
-            else if (complete_2) last_served_id <= 3'd2;
-            else if (complete_3) last_served_id <= 3'd3;
-            else if (complete_4) last_served_id <= 3'd4;
         end
     end
 
-    // ---------------------------------------------------------
-    // 4. Round-Robin Arbitration Logic
-    // ---------------------------------------------------------
+    // =========================================================
+    // 4. ROUND-ROBIN ARBITRATION (Combinational)
+    // =========================================================
     reg [31:0] current_claim_id;
     always @(*) begin
-        current_claim_id = 32'd0; // Default: No active interrupt
+        current_claim_id = 32'd0; // Mặc định không có ngắt
+        
+        // Kiểm tra vòng quanh theo last_served_id để đảm bảo công bằng
         case (last_served_id)
-            3'd1: begin // After ID 1, check 2 -> 3 -> 4 -> 1
-                if      (active_irq[2]) current_claim_id = 32'd2;
-                else if (active_irq[3]) current_claim_id = 32'd3;
-                else if (active_irq[4]) current_claim_id = 32'd4;
-                else if (active_irq[1]) current_claim_id = 32'd1;
-            end
-            3'd2: begin // After ID 2, check 3 -> 4 -> 1 -> 2
-                if      (active_irq[3]) current_claim_id = 32'd3;
-                else if (active_irq[4]) current_claim_id = 32'd4;
-                else if (active_irq[1]) current_claim_id = 32'd1;
-                else if (active_irq[2]) current_claim_id = 32'd2;
-            end
-            3'd3: begin // After ID 3, check 4 -> 1 -> 2 -> 3
-                if      (active_irq[4]) current_claim_id = 32'd4;
-                else if (active_irq[1]) current_claim_id = 32'd1;
-                else if (active_irq[2]) current_claim_id = 32'd2;
-                else if (active_irq[3]) current_claim_id = 32'd3;
-            end
-            default: begin // After ID 4 or at init, check 1 -> 2 -> 3 -> 4
-                if      (active_irq[1]) current_claim_id = 32'd1;
-                else if (active_irq[2]) current_claim_id = 32'd2;
-                else if (active_irq[3]) current_claim_id = 32'd3;
-                else if (active_irq[4]) current_claim_id = 32'd4;
-            end
+            3'd1: if (active_irq[2]) current_claim_id = 32'd2; else if (active_irq[3]) current_claim_id = 32'd3; else if (active_irq[4]) current_claim_id = 32'd4; else if (active_irq[5]) current_claim_id = 32'd5; else if (active_irq[6]) current_claim_id = 32'd6; else if (active_irq[1]) current_claim_id = 32'd1;
+            3'd2: if (active_irq[3]) current_claim_id = 32'd3; else if (active_irq[4]) current_claim_id = 32'd4; else if (active_irq[5]) current_claim_id = 32'd5; else if (active_irq[6]) current_claim_id = 32'd6; else if (active_irq[1]) current_claim_id = 32'd1; else if (active_irq[2]) current_claim_id = 32'd2;
+            3'd3: if (active_irq[4]) current_claim_id = 32'd4; else if (active_irq[5]) current_claim_id = 32'd5; else if (active_irq[6]) current_claim_id = 32'd6; else if (active_irq[1]) current_claim_id = 32'd1; else if (active_irq[2]) current_claim_id = 32'd2; else if (active_irq[3]) current_claim_id = 32'd3;
+            3'd4: if (active_irq[5]) current_claim_id = 32'd5; else if (active_irq[6]) current_claim_id = 32'd6; else if (active_irq[1]) current_claim_id = 32'd1; else if (active_irq[2]) current_claim_id = 32'd2; else if (active_irq[3]) current_claim_id = 32'd3; else if (active_irq[4]) current_claim_id = 32'd4;
+            3'd5: if (active_irq[6]) current_claim_id = 32'd6; else if (active_irq[1]) current_claim_id = 32'd1; else if (active_irq[2]) current_claim_id = 32'd2; else if (active_irq[3]) current_claim_id = 32'd3; else if (active_irq[4]) current_claim_id = 32'd4; else if (active_irq[5]) current_claim_id = 32'd5;
+            default: if (active_irq[1]) current_claim_id = 32'd1; else if (active_irq[2]) current_claim_id = 32'd2; else if (active_irq[3]) current_claim_id = 32'd3; else if (active_irq[4]) current_claim_id = 32'd4; else if (active_irq[5]) current_claim_id = 32'd5; else if (active_irq[6]) current_claim_id = 32'd6;
         endcase
     end
 
-    // ---------------------------------------------------------
-    // 5. CPU Bus Interface: Read Access
-    // ---------------------------------------------------------
-    always @(*) begin
-        cpu_read_data = 32'b0;
-        if (cpu_read_req) begin
-            case (cpu_addr)
-                12'h000: cpu_read_data = {27'b0, ie, 1'b0};   // Read Interrupt Enable status
-                12'h004: cpu_read_data = current_claim_id;    // Claim the highest priority active ID
-                12'h008: cpu_read_data = {28'b0, overflow};   // Read Overflow/Error flags
-                default: cpu_read_data = 32'b0;
-            endcase
+    // =========================================================
+    // 5. APB INTERFACE (Read/Write)
+    // =========================================================
+    // Tạo cờ Pending ảo cho thanh ghi 0x00C
+    wire [NUM_IRQ:1] pending_status;
+    generate
+        for (g = 1; g <= NUM_IRQ; g = g + 1) begin : GEN_PENDING
+            assign pending_status[g] = (counters[g] > 0);
+        end
+    endgenerate
+
+    always @(posedge pclk or negedge presetn) begin
+        if (!presetn) begin
+            ie      <= 0;
+            pready  <= 0;
+            prdata  <= 0;
+            pslverr <= 0;
+        end else begin
+            pready  <= psel && penable;
+            pslverr <= 0;
+            
+            // Xử lý Write
+            if (apb_write) begin
+                case (paddr[11:0])
+                    12'h000: ie <= pwdata[NUM_IRQ:1];
+                    12'h004: ; // Bắt sự kiện is_complete bên trên, không làm gì ở đây
+                    12'h008, 12'h00C: pslverr <= 1'b1; // Cố tình ghi vào Read-only
+                    default: pslverr <= 1'b1;
+                endcase
+            end
+            
+            // Xử lý Read
+            if (apb_read) begin
+                case (paddr[11:0])
+                    12'h000: prdata <= { {(32-NUM_IRQ-1){1'b0}}, ie, 1'b0 };
+                    12'h004: prdata <= current_claim_id;
+                    12'h008: prdata <= { {(32-NUM_IRQ-1){1'b0}}, overflow, 1'b0 };
+                    12'h00C: prdata <= { {(32-NUM_IRQ-1){1'b0}}, pending_status, 1'b0 };
+                    default: begin prdata <= 32'b0; pslverr <= 1'b1; end
+                endcase
+            end
         end
     end
 
