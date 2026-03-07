@@ -78,16 +78,15 @@ module apb_interrupt_controller #(
             last_served_id <= 3'd0;
         end else begin
             for (i = 1; i <= NUM_IRQ; i = i + 1) begin
-                if (irq_edge[i] && !ack_this_irq) begin
-                    // Chỉ tăng khi có ngắt và không có ACK
+                // Thay wire bằng logic gán trực tiếp để tránh lỗi cú pháp trong always
+                if (irq_edge[i] && !(is_complete && (complete_id == i) && (counters[i] > 0))) begin
                     if (counters[i] < 4'd15) counters[i] <= counters[i] + 1;
                     else                     overflow[i] <= 1'b1;
-                end
-                else if (!irq_edge[i] && ack_this_irq) begin
-                    // Chỉ giảm khi có ACK và không có ngắt mới
+                end 
+                else if (!irq_edge[i] && (is_complete && (complete_id == i) && (counters[i] > 0))) begin
                     counters[i] <= counters[i] - 1;
                 end
-                // Nếu cả 2 cùng xảy ra (irq_edge[i] && ack_this_irq) -> Bù trừ nhau (Counter giữ nguyên)
+                // Nếu cả 2 cùng xảy ra -> Tự triệt tiêu, counters[i] giữ nguyên
             end
             
             if (apb_read && (paddr[11:0] == 12'h008)) begin
