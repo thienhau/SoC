@@ -1,13 +1,18 @@
+`timescale 1ns / 1ps
+
+//==================================================================================================
+// File: riscv_pipeline.v
+//==================================================================================================
 module riscv_pipeline (
     input clk,
-    input reset,
+    input reset_n,  // Reset mức thấp
     input riscv_start,
     input external_irq_in,
     output reg riscv_done,
     
     // ICache interface
     output icache_read_req,
-    output [11:0] icache_addr,
+    output [31:0] icache_addr,
     input [31:0] icache_read_data,
     input icache_hit,
     input icache_stall,
@@ -15,7 +20,7 @@ module riscv_pipeline (
     // DCache interface
     output dcache_read_req,
     output dcache_write_req,
-    output [11:0] dcache_addr,
+    output [31:0] dcache_addr,
     output [31:0] dcache_write_data,
     input [31:0] dcache_read_data,
     input dcache_hit,
@@ -23,70 +28,133 @@ module riscv_pipeline (
 
     output flush_top,
     output [1:0] mem_size_top,
-    output mem_unsigned_top
+    output mem_unsigned_top,
+
+    output wfi_sleep_out
 );
     // Instruction Fetch signals
-    wire [11:0] pc_in, pc_out;
-    wire [11:0] pc_plus_4;
+    wire [31:0] pc_in;
+    wire [31:0] pc_out;
+    wire [31:0] pc_plus_4;
     wire [31:0] instr;
 
     // Branch Prediction signals
-    wire predict_taken, bpu_correct, btb_hit, actual_taken;
-    wire [11:0] predict_target;
+    wire predict_taken;
+    wire bpu_correct;
+    wire btb_hit;
+    wire actual_taken;
+    wire [31:0] predict_target;
     
     // IF/ID Pipeline signals
     wire [31:0] if_id_instr;
-    wire [11:0] if_id_pc_plus_4, if_id_pc_in;
-    wire if_id_predict_taken, if_id_btb_hit;
+    wire [31:0] if_id_pc_plus_4;
+    wire [31:0] if_id_pc_in;
+    wire if_id_predict_taken;
+    wire if_id_btb_hit;
     
     // Instruction Decode signals
-    wire [31:0] read_data1, read_data2, ext_imm;
-    wire [4:0] rs1, rs2, rd, rs3;
+    wire [31:0] read_data1;
+    wire [31:0] read_data2;
+    wire [31:0] ext_imm;
+    wire [4:0] rs1;
+    wire [4:0] rs2;
+    wire [4:0] rd;
+    wire [4:0] rs3;
     wire [2:0] funct3;
-    wire [6:0] opcode, funct7;
-    wire [11:0] jal_target, branch_target;
-    wire reg_write, alu_src, mem_write, mem_read, mem_to_reg;
-    wire branch, jal, jalr, lui, auipc, mem_unsigned;
-    wire [1:0] alu_op, mem_size;
+    wire [6:0] opcode;
+    wire [6:0] funct7;
+    wire [31:0] jal_target;
+    wire [31:0] branch_target;
+    wire reg_write;
+    wire alu_src;
+    wire mem_write;
+    wire mem_read;
+    wire mem_to_reg;
+    wire branch;
+    wire jal;
+    wire jalr;
+    wire lui;
+    wire auipc;
+    wire mem_unsigned;
+    wire [1:0] alu_op;
+    wire [1:0] mem_size;
     wire [3:0] alu_ctrl;
-    wire ecall, ebreak, mret; 
+    wire ecall;
+    wire ebreak;
+    wire mret; 
     wire [11:0] csr_addr; 
     wire [1:0] csr_op; 
     wire csr_we;
     wire md_type;
     wire [2:0] md_operation;
+    
     // FPU signals
-    wire fpu_en, f_reg_write, f_mem_to_reg, f_mem_write, f_to_x, x_to_f;
+    wire fpu_en;
+    wire f_reg_write;
+    wire f_mem_to_reg;
+    wire f_mem_write;
+    wire f_to_x;
+    wire x_to_f;
     wire [4:0] fpu_operation;
     
     // ID/EX Pipeline signals
-    wire [11:0] id_ex_pc_plus_4, id_ex_pc_in;
+    wire [31:0] id_ex_pc_plus_4;
+    wire [31:0] id_ex_pc_in;
     wire [2:0] id_ex_funct3;
     wire [31:0] id_ex_instr;
-    wire [31:0] id_ex_read_data1, id_ex_read_data2, id_ex_ext_imm;
-    wire [4:0] id_ex_rs1, id_ex_rs2, id_ex_rd, id_ex_rs3;
-    wire id_ex_reg_write, id_ex_alu_src;
-    wire id_ex_mem_write, id_ex_mem_read, id_ex_mem_to_reg;
-    wire id_ex_branch, id_ex_jal, id_ex_jalr, id_ex_lui, id_ex_auipc, id_ex_mem_unsigned;
+    wire [31:0] id_ex_read_data1;
+    wire [31:0] id_ex_read_data2;
+    wire [31:0] id_ex_ext_imm;
+    wire [4:0] id_ex_rs1;
+    wire [4:0] id_ex_rs2;
+    wire [4:0] id_ex_rd;
+    wire [4:0] id_ex_rs3;
+    wire id_ex_reg_write;
+    wire id_ex_alu_src;
+    wire id_ex_mem_write;
+    wire id_ex_mem_read;
+    wire id_ex_mem_to_reg;
+    wire id_ex_branch;
+    wire id_ex_jal;
+    wire id_ex_jalr;
+    wire id_ex_lui;
+    wire id_ex_auipc;
+    wire id_ex_mem_unsigned;
     wire [1:0] id_ex_mem_size;
     wire [3:0] id_ex_alu_ctrl;
-    wire [11:0] id_ex_branch_target, id_ex_jal_target;
-    wire id_ex_predict_taken, id_ex_btb_hit;
-    wire id_ex_ecall, id_ex_ebreak, id_ex_mret; 
+    wire [31:0] id_ex_branch_target;
+    wire [31:0] id_ex_jal_target;
+    wire id_ex_predict_taken;
+    wire id_ex_btb_hit;
+    wire id_ex_ecall;
+    wire id_ex_ebreak;
+    wire id_ex_mret; 
     wire [11:0] id_ex_csr_addr; 
     wire [1:0] id_ex_csr_op; 
     wire id_ex_csr_we;
     wire id_ex_md_type;
     wire [2:0] id_ex_md_operation;
+    
     // FPU ID/EX signals
-    wire id_ex_fpu_en, id_ex_f_reg_write, id_ex_f_mem_to_reg, id_ex_f_mem_write;
-    wire id_ex_f_to_x, id_ex_x_to_f;
+    wire id_ex_fpu_en;
+    wire id_ex_f_reg_write;
+    wire id_ex_f_mem_to_reg;
+    wire id_ex_f_mem_write;
+    wire id_ex_f_to_x;
+    wire id_ex_x_to_f;
     wire [4:0] id_ex_fpu_operation;
-    wire [31:0] id_ex_read_f_data1, id_ex_read_f_data2, id_ex_read_f_data3;
+    wire [31:0] id_ex_read_f_data1;
+    wire [31:0] id_ex_read_f_data2;
+    wire [31:0] id_ex_read_f_data3;
     
     // Forwarding Unit signals
-    wire [31:0] alu_in1, alu_in2, mem_write_data, csr_write_data_ex;
-    wire [31:0] fpu_in1, fpu_in2, fpu_in3;
+    wire [31:0] alu_in1;
+    wire [31:0] alu_in2;
+    wire [31:0] mem_write_data;
+    wire [31:0] csr_write_data_ex;
+    wire [31:0] fpu_in1;
+    wire [31:0] fpu_in2;
+    wire [31:0] fpu_in3;
     
     // Execute signals
     wire [31:0] alu_result;
@@ -96,47 +164,77 @@ module riscv_pipeline (
     
     // EX/MEM Pipeline signals
     wire [31:0] ex_mem_instr;
-    wire [31:0] ex_mem_alu_result, ex_mem_mem_write_data;
-    wire [11:0] ex_mem_branch_target, ex_mem_pc_plus_4, ex_mem_pc_in;
+    wire [31:0] ex_mem_alu_result;
+    wire [31:0] ex_mem_mem_write_data;
+    wire [31:0] ex_mem_branch_target;
+    wire [31:0] ex_mem_pc_plus_4;
+    wire [31:0] ex_mem_pc_in;
     wire [4:0] ex_mem_rd;
-    wire ex_mem_mem_write, ex_mem_mem_read, ex_mem_mem_to_reg, ex_mem_branch, ex_mem_branch_taken, ex_mem_jal, ex_mem_mem_unsigned;
+    wire ex_mem_mem_write;
+    wire ex_mem_mem_read;
+    wire ex_mem_mem_to_reg;
+    wire ex_mem_branch;
+    wire ex_mem_branch_taken;
+    wire ex_mem_jal;
+    wire ex_mem_mem_unsigned;
     wire ex_mem_reg_write;
     wire [1:0] ex_mem_mem_size;
-    wire ex_mem_predict_taken, ex_mem_btb_hit;
-    wire ex_mem_ecall, ex_mem_ebreak, ex_mem_mret;
+    wire ex_mem_predict_taken;
+    wire ex_mem_btb_hit;
+    wire ex_mem_ecall;
+    wire ex_mem_ebreak;
+    wire ex_mem_mret;
     wire [11:0] ex_mem_csr_addr; 
     wire [1:0] ex_mem_csr_op; 
     wire ex_mem_csr_we; 
     wire [31:0] ex_mem_csr_write_data;
+    
     // FPU EX/MEM signals
-    wire [31:0] ex_mem_fpu_result, ex_mem_f_store_data;
-    wire ex_mem_f_reg_write, ex_mem_f_mem_to_reg, ex_mem_f_mem_write;
+    wire [31:0] ex_mem_fpu_result;
+    wire [31:0] ex_mem_f_store_data;
+    wire ex_mem_f_reg_write;
+    wire ex_mem_f_mem_to_reg;
+    wire ex_mem_f_mem_write;
 
     // Memory Access signals
     wire [31:0] mem_read_data;
     
     // MEM/WB Pipeline signals
-    wire [31:0] mem_wb_mem_read_data, mem_wb_alu_result;
-    wire [11:0] mem_wb_pc_plus_4;
-    wire mem_wb_mem_to_reg, mem_wb_reg_write, mem_wb_jal;
+    wire [31:0] mem_wb_mem_read_data;
+    wire [31:0] mem_wb_alu_result;
+    wire [31:0] mem_wb_pc_plus_4;
+    wire mem_wb_mem_to_reg;
+    wire mem_wb_reg_write;
+    wire mem_wb_jal;
     wire [4:0] mem_wb_rd;
     wire mem_wb_ecall;
+    
     // FPU MEM/WB signals
     wire [31:0] mem_wb_fpu_result;
-    wire mem_wb_f_reg_write, mem_wb_f_mem_to_reg;
+    wire mem_wb_f_reg_write;
+    wire mem_wb_f_mem_to_reg;
     
     // Write Back signals
     wire [31:0] mem_wb_write_data;
     wire [31:0] wb_f_write_data;
     
     // Pipeline Control signals
-    wire load_use_stall, flush_branch, flush_jal, flush_trap;
+    wire load_use_stall;
+    wire flush_branch;
+    wire flush_jal;
+    wire flush_trap;
 
     // Register File signals
-    wire [31:0] read_data1_temp, read_data2_temp;
+    wire [31:0] read_data1_temp;
+    wire [31:0] read_data2_temp;
+    
     // F Register File signals
-    wire [31:0] read_f_data1_temp, read_f_data2_temp, read_f_data3_temp;
-    wire [31:0] read_f_data1, read_f_data2, read_f_data3;
+    wire [31:0] read_f_data1_temp;
+    wire [31:0] read_f_data2_temp;
+    wire [31:0] read_f_data3_temp;
+    wire [31:0] read_f_data1;
+    wire [31:0] read_f_data2;
+    wire [31:0] read_f_data3;
 
     wire [31:0] mie_val;
     wire mstatus_mie_val;
@@ -145,34 +243,49 @@ module riscv_pipeline (
     wire is_external_interrupt = external_irq_in & mie_val[11] & mstatus_mie_val;
     wire trap_enter = ex_mem_ecall | ex_mem_ebreak | is_external_interrupt;
     
-    wire [31:0] trap_cause = is_external_interrupt ? 32'h8000000b : // External interrupt
-                             ex_mem_ecall           ? 32'd11       : // ecall
+    wire [31:0] trap_cause = is_external_interrupt ? 32'h8000000b :
+                             ex_mem_ecall           ? 32'd11       :
                              ex_mem_ebreak          ? 32'd3        : 32'd0;
 
-    wire [11:0] mtvec_pc, mepc_pc;
-    wire [31:0] csr_read_data_raw, csr_read_data_fwd;
+    wire [31:0] mtvec_pc;
+    wire [31:0] mepc_pc;
+    wire [31:0] csr_read_data_raw;
+    wire [31:0] csr_read_data_fwd;
+
+    wire wfi_req_internal;
 
     // CSR Forwarding
     assign csr_read_data_fwd = (ex_mem_csr_we && (ex_mem_csr_addr == id_ex_csr_addr)) ? 
                                 ex_mem_csr_write_data : csr_read_data_raw;
 
     csr_register_file CSR_RF (
-        .clk(clk), .reset(reset),
-        .csr_addr(id_ex_csr_addr), .csr_read_data(csr_read_data_raw),
-        .csr_write_addr(ex_mem_csr_addr), .csr_write_data(ex_mem_csr_write_data),
-        .csr_op(ex_mem_csr_op), .csr_write_en(ex_mem_csr_we),
-        .count_en(1'b1), .instret_en(!dcache_stall && !icache_stall && !md_alu_stall && !flush_trap && !flush_branch),
-        .trap_enter(trap_enter), .mret_exec(ex_mem_mret), .trap_cause(trap_cause),
-        .trap_pc(ex_mem_pc_in), .trap_val(32'd0),
-        .mtvec_out(mtvec_pc), .mepc_out(mepc_pc), .mie_out(mie_val),
+        .clk(clk),
+        .reset_n(reset_n),
+        .csr_addr(id_ex_csr_addr),
+        .csr_read_data(csr_read_data_raw),
+        .csr_write_addr(ex_mem_csr_addr),
+        .csr_write_data(ex_mem_csr_write_data),
+        .csr_op(ex_mem_csr_op),
+        .csr_write_en(ex_mem_csr_we),
+        .count_en(1'b1),
+        .instret_en(!dcache_stall && !icache_stall && !md_alu_stall && !flush_trap && !flush_branch),
+        .trap_enter(trap_enter),
+        .mret_exec(ex_mem_mret),
+        .trap_cause(trap_cause),
+        .trap_pc(ex_mem_pc_in),
+        .trap_val(32'd0),
+        .mtvec_out(mtvec_pc),
+        .mepc_out(mepc_pc),
+        .mie_out(mie_val),
         .mstatus_mie(mstatus_mie_val)
     );
 
     // PC register
-    reg [11:0] pc_reg = 0;
-    always @(posedge clk) begin
-        if (reset) begin
-            pc_reg <= 0;
+    reg [31:0] pc_reg;
+    
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            pc_reg <= 32'd0;
         end else if (riscv_start && !riscv_done) begin
             if (flush_branch || flush_jal) begin
                 pc_reg <= pc_out;
@@ -181,13 +294,15 @@ module riscv_pipeline (
             end
         end
     end
+    
     assign pc_in = pc_reg;
 
     // Flush signal register
-    reg flush_temp = 0;
-    always @(posedge clk) begin
-        if (reset) begin
-            flush_temp <= 0;
+    reg flush_temp;
+    
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            flush_temp <= 1'b0;
         end else if (riscv_start && !riscv_done) begin
             flush_temp <= flush_branch || flush_jal;
         end
@@ -199,11 +314,11 @@ module riscv_pipeline (
 
     // Instruction Fetch
     instruction_fetch IF (
-        .reset(reset),
+        .reset_n(reset_n),
         .flush_temp(flush_temp),
         .trap_enter(trap_enter),
         .mret_exec(ex_mem_mret),
-        .reset_vector_in(12'h000),
+        .reset_vector_in(32'h00000000),
         .mtvec_in(mtvec_pc),
         .mepc_in(mepc_pc),
         .ex_mem_branch_target(ex_mem_branch_target),
@@ -230,7 +345,7 @@ module riscv_pipeline (
     // IF/ID Pipeline Register
     if_id_register IF_ID (
         .clk(clk),
-        .reset(reset),
+        .reset_n(reset_n),
         .icache_stall(icache_stall),
         .dcache_stall(dcache_stall),
         .md_alu_stall(md_alu_stall),
@@ -292,13 +407,16 @@ module riscv_pipeline (
         .f_mem_write(f_mem_write),
         .f_to_x(f_to_x),
         .x_to_f(x_to_f),
-        .fpu_operation(fpu_operation)
+        .fpu_operation(fpu_operation),
+        .wfi_req(wfi_req_internal)
     );
+
+    assign wfi_sleep_out = wfi_req_internal;
     
     // Integer Register File
     register_file RF (
         .clk(clk),
-        .reset(reset),
+        .reset_n(reset_n),
         .read_reg1(rs1),
         .read_reg2(rs2),
         .mem_wb_reg_write(mem_wb_reg_write),
@@ -309,15 +427,15 @@ module riscv_pipeline (
     );
     
     // Forwarding from MEM/WB to ID (integer)
-    assign read_data1 = (rs1 != 0 && rs1 == mem_wb_rd && mem_wb_reg_write) 
+    assign read_data1 = (rs1 != 5'd0 && rs1 == mem_wb_rd && mem_wb_reg_write) 
                         ? mem_wb_write_data : read_data1_temp;
-    assign read_data2 = (rs2 != 0 && rs2 == mem_wb_rd && mem_wb_reg_write)
+    assign read_data2 = (rs2 != 5'd0 && rs2 == mem_wb_rd && mem_wb_reg_write)
                         ? mem_wb_write_data : read_data2_temp;
     
-    // Floating-point Register File (LUTRAM)
+    // Floating-point Register File
     f_register_file F_RF (
         .clk(clk),
-        .reset(reset),
+        .reset_n(reset_n),
         .read_reg1(rs1),
         .read_reg2(rs2),
         .read_reg3(rs3),
@@ -340,7 +458,7 @@ module riscv_pipeline (
     // ID/EX Pipeline Register
     id_ex_register ID_EX (
         .clk(clk),
-        .reset(reset),
+        .reset_n(reset_n),
         .dcache_stall(dcache_stall),
         .md_alu_stall(md_alu_stall),
         .load_use_stall(load_use_stall),
@@ -382,7 +500,6 @@ module riscv_pipeline (
         .md_type(md_type),
         .md_operation(md_operation),
         .if_id_instr(if_id_instr),
-        // FPU inputs
         .fpu_en(fpu_en),
         .f_reg_write(f_reg_write),
         .f_mem_to_reg(f_mem_to_reg),
@@ -394,7 +511,6 @@ module riscv_pipeline (
         .read_f_data2(read_f_data2),
         .read_f_data3(read_f_data3),
         .rs3(rs3),
-        // Outputs
         .id_ex_pc_plus_4(id_ex_pc_plus_4),
         .id_ex_pc_in(id_ex_pc_in),
         .id_ex_funct3(id_ex_funct3),
@@ -430,7 +546,6 @@ module riscv_pipeline (
         .id_ex_md_type(id_ex_md_type),
         .id_ex_md_operation(id_ex_md_operation),
         .id_ex_instr(id_ex_instr),
-        // FPU outputs
         .id_ex_fpu_en(id_ex_fpu_en),
         .id_ex_f_reg_write(id_ex_f_reg_write),
         .id_ex_f_mem_to_reg(id_ex_f_mem_to_reg),
@@ -461,7 +576,6 @@ module riscv_pipeline (
         .alu_in1(alu_in1),
         .alu_in2(alu_in2),
         .mem_write_data(mem_write_data),
-        // FPU
         .id_ex_read_f_data1(id_ex_read_f_data1),
         .id_ex_read_f_data2(id_ex_read_f_data2),
         .id_ex_read_f_data3(id_ex_read_f_data3),
@@ -478,7 +592,7 @@ module riscv_pipeline (
     // Execute Stage
     execute EX (
         .clk(clk),
-        .reset(reset),
+        .reset_n(reset_n),
         .alu_in1(alu_in1),
         .alu_in2(alu_in2),
         .id_ex_alu_ctrl(id_ex_alu_ctrl),
@@ -495,7 +609,6 @@ module riscv_pipeline (
         .id_ex_csr_we(id_ex_csr_we),
         .csr_read_data(csr_read_data_fwd),
         .id_ex_rs1(id_ex_rs1),
-        // FPU
         .id_ex_fpu_en(id_ex_fpu_en),
         .id_ex_fpu_operation(id_ex_fpu_operation),
         .id_ex_read_f_data1(fpu_in1),
@@ -503,7 +616,6 @@ module riscv_pipeline (
         .id_ex_read_f_data3(fpu_in3),
         .id_ex_f_to_x(id_ex_f_to_x),
         .id_ex_x_to_f(id_ex_x_to_f),
-        // Outputs
         .alu_result(alu_result),
         .branch_taken(branch_taken),
         .csr_write_data(csr_write_data_ex),
@@ -514,7 +626,7 @@ module riscv_pipeline (
     // EX/MEM Pipeline Register
     ex_mem_register EX_MEM (
         .clk(clk),
-        .reset(reset),
+        .reset_n(reset_n),
         .dcache_stall(dcache_stall),
         .md_alu_stall(md_alu_stall),
         .flush(flush_branch | flush_trap),
@@ -547,13 +659,11 @@ module riscv_pipeline (
         .id_ex_csr_we(id_ex_csr_we),
         .csr_write_data_in(csr_write_data_ex),
         .id_ex_instr(id_ex_instr),
-        // FPU
         .fpu_result(fpu_result_out),
         .id_ex_read_f_data2(fpu_in2),
         .id_ex_f_reg_write(id_ex_f_reg_write),
         .id_ex_f_mem_to_reg(id_ex_f_mem_to_reg),
         .id_ex_f_mem_write(id_ex_f_mem_write),
-        // Outputs
         .ex_mem_alu_result(ex_mem_alu_result),
         .ex_mem_rd(ex_mem_rd),
         .ex_mem_branch_target(ex_mem_branch_target),
@@ -579,7 +689,6 @@ module riscv_pipeline (
         .ex_mem_csr_we(ex_mem_csr_we),
         .ex_mem_csr_write_data(ex_mem_csr_write_data),
         .ex_mem_instr(ex_mem_instr),
-        // FPU outputs
         .ex_mem_fpu_result(ex_mem_fpu_result),
         .ex_mem_f_store_data(ex_mem_f_store_data),
         .ex_mem_f_reg_write(ex_mem_f_reg_write),
@@ -594,7 +703,7 @@ module riscv_pipeline (
     memory_access MEM (
         .ex_mem_alu_result(ex_mem_alu_result),
         .ex_mem_mem_write_data(final_mem_write_data),
-        .ex_mem_mem_write(ex_mem_mem_write | ex_mem_f_mem_write), // Combine write signals
+        .ex_mem_mem_write(ex_mem_mem_write | ex_mem_f_mem_write),
         .ex_mem_mem_read(ex_mem_mem_read),
         .mem_read_data(mem_read_data),
         .dcache_read_req(dcache_read_req),
@@ -607,7 +716,7 @@ module riscv_pipeline (
     // MEM/WB Pipeline Register
     mem_wb_register MEM_WB (
         .clk(clk),
-        .reset(reset),
+        .reset_n(reset_n),
         .dcache_stall(dcache_stall),
         .riscv_start(riscv_start),
         .riscv_done(riscv_done),
@@ -619,11 +728,9 @@ module riscv_pipeline (
         .ex_mem_alu_result(ex_mem_alu_result),
         .ex_mem_rd(ex_mem_rd),
         .ex_mem_ecall(ex_mem_ecall),
-        // FPU
         .ex_mem_fpu_result(ex_mem_fpu_result),
         .ex_mem_f_reg_write(ex_mem_f_reg_write),
         .ex_mem_f_mem_to_reg(ex_mem_f_mem_to_reg),
-        // Outputs
         .mem_wb_mem_read_data(mem_wb_mem_read_data),
         .mem_wb_pc_plus_4(mem_wb_pc_plus_4),
         .mem_wb_mem_to_reg(mem_wb_mem_to_reg),
@@ -632,7 +739,6 @@ module riscv_pipeline (
         .mem_wb_alu_result(mem_wb_alu_result),
         .mem_wb_rd(mem_wb_rd),
         .mem_wb_ecall(mem_wb_ecall),
-        // FPU outputs
         .mem_wb_fpu_result(mem_wb_fpu_result),
         .mem_wb_f_reg_write(mem_wb_f_reg_write),
         .mem_wb_f_mem_to_reg(mem_wb_f_mem_to_reg)
@@ -673,7 +779,7 @@ module riscv_pipeline (
     // Branch Prediction Unit
     branch_prediction_unit BPU (
         .clk(clk),
-        .reset(reset),
+        .reset_n(reset_n),
         .pc_in(pc_in), 
         .ex_mem_pc_in(ex_mem_pc_in),
         .ex_mem_branch(ex_mem_branch),
@@ -689,8 +795,8 @@ module riscv_pipeline (
     );
     
     // Control logic
-    always @(posedge clk) begin
-        if (reset) begin
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
             riscv_done <= 1'b0;
         end else if (riscv_start) begin
             if (mem_wb_ecall) begin
@@ -698,4 +804,5 @@ module riscv_pipeline (
             end
         end
     end
+    
 endmodule

@@ -1,36 +1,44 @@
+//==================================================================================================
+// File: pipeline_register.v
+//==================================================================================================
 module if_id_register (
-    input clk, reset,
-    input icache_stall, dcache_stall, md_alu_stall, load_use_stall, flush, riscv_start, riscv_done,
+    input clk,
+    input reset_n,
+    input icache_stall,
+    input dcache_stall,
+    input md_alu_stall,
+    input load_use_stall,
+    input flush,
+    input riscv_start,
+    input riscv_done,
     input [31:0] instr,
-    input [11:0] pc_plus_4, pc_in,
-    input predict_taken, btb_hit,
+    input [31:0] pc_plus_4,
+    input [31:0] pc_in,
+    input predict_taken,
+    input btb_hit,
     output reg [31:0] if_id_instr,
-    output reg [11:0] if_id_pc_plus_4, if_id_pc_in,
-    output reg if_id_predict_taken, if_id_btb_hit
+    output reg [31:0] if_id_pc_plus_4,
+    output reg [31:0] if_id_pc_in,
+    output reg if_id_predict_taken,
+    output reg if_id_btb_hit
 );
-    always @(posedge clk) begin
-        if (reset) begin
-            if_id_pc_in <= 0;
-            if_id_instr <= 0;
-            if_id_pc_plus_4 <= 0;
-            if_id_predict_taken <= 0;
-            if_id_btb_hit <= 0;
-        end 
-        
-        else if (riscv_start && !riscv_done) begin            
+
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            if_id_pc_in <= 32'd0;
+            if_id_instr <= 32'd0;
+            if_id_pc_plus_4 <= 32'd0;
+            if_id_predict_taken <= 1'b0;
+            if_id_btb_hit <= 1'b0;
+        end else if (riscv_start && !riscv_done) begin            
             if (flush) begin
-                if_id_pc_in <= 0;
+                if_id_pc_in <= 32'd0;
                 if_id_instr <= 32'h00000013;
-                if_id_pc_plus_4 <= 0;
-                if_id_predict_taken <= 0;
-                if_id_btb_hit <= 0;
-            end
-
-            else if (load_use_stall || icache_stall || dcache_stall || md_alu_stall) begin
-                
-            end 
-
-            else begin
+                if_id_pc_plus_4 <= 32'd0;
+                if_id_predict_taken <= 1'b0;
+                if_id_btb_hit <= 1'b0;
+            end else if (load_use_stall || icache_stall || dcache_stall || md_alu_stall) begin
+            end else begin
                 if_id_pc_in <= pc_in;
                 if_id_instr <= instr;
                 if_id_pc_plus_4 <= pc_plus_4;
@@ -39,46 +47,100 @@ module if_id_register (
             end
         end
     end
+    
 endmodule
 
+
 module id_ex_register (
-    input clk, reset,
-    input dcache_stall, md_alu_stall, load_use_stall, flush, riscv_start, riscv_done,
-    input [11:0] if_id_pc_plus_4, if_id_pc_in,
+    input clk,
+    input reset_n,
+    input dcache_stall,
+    input md_alu_stall,
+    input load_use_stall,
+    input flush,
+    input riscv_start,
+    input riscv_done,
+    input [31:0] if_id_pc_plus_4,
+    input [31:0] if_id_pc_in,
     input [2:0] funct3,
-    input [31:0] read_data1, read_data2, ext_imm, if_id_instr,
-    input [4:0] rs1, rs2, rd,
-    input reg_write, alu_src, mem_write, mem_read, mem_to_reg, branch, jal, jalr, lui, auipc, mem_unsigned,
+    input [31:0] read_data1,
+    input [31:0] read_data2,
+    input [31:0] ext_imm,
+    input [4:0] rs1,
+    input [4:0] rs2,
+    input [4:0] rd,
+    input reg_write,
+    input alu_src,
+    input mem_write,
+    input mem_read,
+    input mem_to_reg,
+    input branch,
+    input jal,
+    input jalr,
+    input lui,
+    input auipc,
+    input mem_unsigned,
     input [1:0] mem_size,
     input [3:0] alu_ctrl,
-    input [11:0] branch_target, jal_target,
-    input if_id_predict_taken, if_id_btb_hit, ecall, ebreak, mret,
-    input [11:0] csr_addr, input [1:0] csr_op, input csr_we,
-    // Mul-div signals
+    input [31:0] branch_target,
+    input [31:0] jal_target,
+    input if_id_predict_taken,
+    input if_id_btb_hit,
+    input ecall,
+    input ebreak,
+    input mret,
+    input [11:0] csr_addr,
+    input [1:0] csr_op,
+    input csr_we,
     input md_type,
     input [2:0] md_operation,
-    // FPU signals
-    input fpu_en, f_reg_write, f_mem_to_reg, f_mem_write, f_to_x, x_to_f,
+    input [31:0] if_id_instr,
+    input fpu_en,
+    input f_reg_write,
+    input f_mem_to_reg,
+    input f_mem_write,
+    input f_to_x,
+    input x_to_f,
     input [4:0] fpu_operation,
-    input [31:0] read_f_data1, read_f_data2, read_f_data3,
+    input [31:0] read_f_data1,
+    input [31:0] read_f_data2,
+    input [31:0] read_f_data3,
     input [4:0] rs3,
-    // Outputs
-    output reg [11:0] id_ex_pc_plus_4, id_ex_pc_in,
+    output reg [31:0] id_ex_pc_plus_4,
+    output reg [31:0] id_ex_pc_in,
     output reg [2:0] id_ex_funct3,
-    output reg [31:0] id_ex_read_data1, id_ex_read_data2, id_ex_ext_imm, id_ex_instr,
-    output reg [4:0] id_ex_rs1, id_ex_rs2, id_ex_rd,
-    output reg id_ex_reg_write, id_ex_alu_src, id_ex_mem_write, id_ex_mem_read, 
-    output reg id_ex_mem_to_reg, id_ex_branch, id_ex_jal, id_ex_jalr, 
-    output reg id_ex_lui, id_ex_auipc, id_ex_mem_unsigned,
+    output reg [31:0] id_ex_read_data1,
+    output reg [31:0] id_ex_read_data2,
+    output reg [31:0] id_ex_ext_imm,
+    output reg [4:0] id_ex_rs1,
+    output reg [4:0] id_ex_rs2,
+    output reg [4:0] id_ex_rd,
+    output reg id_ex_reg_write,
+    output reg id_ex_alu_src,
+    output reg id_ex_mem_write,
+    output reg id_ex_mem_read,
+    output reg id_ex_mem_to_reg,
+    output reg id_ex_branch,
+    output reg id_ex_jal,
+    output reg id_ex_jalr,
+    output reg id_ex_lui,
+    output reg id_ex_auipc,
+    output reg id_ex_mem_unsigned,
     output reg [1:0] id_ex_mem_size,
     output reg [3:0] id_ex_alu_ctrl,
-    output reg [11:0] id_ex_branch_target, id_ex_jal_target,
-    output reg id_ex_predict_taken, id_ex_btb_hit, id_ex_ecall, id_ex_ebreak, id_ex_mret,
-    output reg [11:0] id_ex_csr_addr, output reg [1:0] id_ex_csr_op, output reg id_ex_csr_we,
-    // Mul-div outputs
+    output reg [31:0] id_ex_branch_target,
+    output reg [31:0] id_ex_jal_target,
+    output reg id_ex_predict_taken,
+    output reg id_ex_btb_hit,
+    output reg id_ex_ecall,
+    output reg id_ex_ebreak,
+    output reg id_ex_mret,
+    output reg [11:0] id_ex_csr_addr,
+    output reg [1:0] id_ex_csr_op,
+    output reg id_ex_csr_we,
     output reg id_ex_md_type,
     output reg [2:0] id_ex_md_operation,
-    // FPU outputs
+    output reg [31:0] id_ex_instr,
     output reg id_ex_fpu_en,
     output reg id_ex_f_reg_write,
     output reg id_ex_f_mem_to_reg,
@@ -91,112 +153,105 @@ module id_ex_register (
     output reg [31:0] id_ex_read_f_data3,
     output reg [4:0] id_ex_rs3
 );
-    always @(posedge clk) begin
-        if (reset) begin
-            id_ex_pc_plus_4 <= 0;
-            id_ex_pc_in <= 0;
-            id_ex_funct3 <= 0;
-            id_ex_read_data1 <= 0;
-            id_ex_read_data2 <= 0;
-            id_ex_ext_imm <= 0;
-            id_ex_rs1 <= 0;
-            id_ex_rs2 <= 0;
-            id_ex_rd <= 0;
-            id_ex_alu_src <= 0;
-            id_ex_mem_write <= 0;
-            id_ex_mem_read <= 0;
-            id_ex_mem_to_reg <= 0;
-            id_ex_reg_write <= 0;
-            id_ex_branch <= 0;
-            id_ex_jal <= 0;
-            id_ex_jalr <= 0;
-            id_ex_lui <= 0;
-            id_ex_auipc <= 0;
-            id_ex_mem_unsigned <= 0;
-            id_ex_mem_size <= 0;
-            id_ex_alu_ctrl <= 0;
-            id_ex_branch_target <= 0;
-            id_ex_jal_target <= 0;
-            id_ex_predict_taken <= 0;
-            id_ex_btb_hit <= 0;
-            id_ex_instr <= 0;
-            id_ex_ecall <= 0;
-            id_ex_ebreak <= 0; 
-            id_ex_mret <= 0;
-            id_ex_csr_addr <= 0; 
-            id_ex_csr_op <= 0;
-            id_ex_csr_we <= 0;
-            id_ex_md_type <= 0;
-            id_ex_md_operation <= 0;
-            // FPU
-            id_ex_fpu_en <= 0;
-            id_ex_f_reg_write <= 0;
-            id_ex_f_mem_to_reg <= 0;
-            id_ex_f_mem_write <= 0;
-            id_ex_f_to_x <= 0;
-            id_ex_x_to_f <= 0;
-            id_ex_fpu_operation <= 0;
-            id_ex_read_f_data1 <= 0;
-            id_ex_read_f_data2 <= 0;
-            id_ex_read_f_data3 <= 0;
-            id_ex_rs3 <= 0;
-        end 
-        else if (riscv_start && !riscv_done) begin
+
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            id_ex_pc_plus_4 <= 32'd0;
+            id_ex_pc_in <= 32'd0;
+            id_ex_funct3 <= 3'd0;
+            id_ex_read_data1 <= 32'd0;
+            id_ex_read_data2 <= 32'd0;
+            id_ex_ext_imm <= 32'd0;
+            id_ex_rs1 <= 5'd0;
+            id_ex_rs2 <= 5'd0;
+            id_ex_rd <= 5'd0;
+            id_ex_alu_src <= 1'b0;
+            id_ex_mem_write <= 1'b0;
+            id_ex_mem_read <= 1'b0;
+            id_ex_mem_to_reg <= 1'b0;
+            id_ex_reg_write <= 1'b0;
+            id_ex_branch <= 1'b0;
+            id_ex_jal <= 1'b0;
+            id_ex_jalr <= 1'b0;
+            id_ex_lui <= 1'b0;
+            id_ex_auipc <= 1'b0;
+            id_ex_mem_unsigned <= 1'b0;
+            id_ex_mem_size <= 2'b00;
+            id_ex_alu_ctrl <= 4'b0;
+            id_ex_branch_target <= 32'd0;
+            id_ex_jal_target <= 32'd0;
+            id_ex_predict_taken <= 1'b0;
+            id_ex_btb_hit <= 1'b0;
+            id_ex_instr <= 32'd0;
+            id_ex_ecall <= 1'b0;
+            id_ex_ebreak <= 1'b0; 
+            id_ex_mret <= 1'b0;
+            id_ex_csr_addr <= 12'd0; 
+            id_ex_csr_op <= 2'b0;
+            id_ex_csr_we <= 1'b0;
+            id_ex_md_type <= 1'b0;
+            id_ex_md_operation <= 3'b0;
+            id_ex_fpu_en <= 1'b0;
+            id_ex_f_reg_write <= 1'b0;
+            id_ex_f_mem_to_reg <= 1'b0;
+            id_ex_f_mem_write <= 1'b0;
+            id_ex_f_to_x <= 1'b0;
+            id_ex_x_to_f <= 1'b0;
+            id_ex_fpu_operation <= 5'd0;
+            id_ex_read_f_data1 <= 32'd0;
+            id_ex_read_f_data2 <= 32'd0;
+            id_ex_read_f_data3 <= 32'd0;
+            id_ex_rs3 <= 5'd0;
+        end else if (riscv_start && !riscv_done) begin
             if (flush) begin
-                id_ex_reg_write <= 0;
-                id_ex_mem_write <= 0;
-                id_ex_mem_read <= 0;
-                id_ex_mem_to_reg <= 0;
-                id_ex_branch <= 0;
-                id_ex_jal <= 0;
-                id_ex_jalr <= 0;
-                id_ex_lui <= 0;
-                id_ex_auipc <= 0;
-                id_ex_pc_in <= 0;
-                id_ex_predict_taken <= 0;
-                id_ex_btb_hit <= 0;
-                id_ex_ecall <= 0; 
-                id_ex_ebreak <= 0; 
-                id_ex_mret <= 0; 
-                id_ex_csr_we <= 0;
-                id_ex_md_type <= 0;
-                id_ex_md_operation <= 0;
-                // FPU
-                id_ex_fpu_en <= 0;
-                id_ex_f_reg_write <= 0;
-                id_ex_f_mem_to_reg <= 0;
-                id_ex_f_mem_write <= 0;
-                id_ex_f_to_x <= 0;
-                id_ex_x_to_f <= 0;
-            end  
-            else if (dcache_stall || md_alu_stall) begin
-                // Hold
-            end  
-            else if (load_use_stall) begin
-                id_ex_reg_write <= 0;
-                id_ex_mem_write <= 0;
-                id_ex_mem_read <= 0;
-                id_ex_mem_to_reg <= 0;
-                id_ex_branch <= 0;
-                id_ex_jal <= 0;
-                id_ex_jalr <= 0;
-                id_ex_lui <= 0;
-                id_ex_auipc <= 0;
-                id_ex_ecall <= 0; 
-                id_ex_ebreak <= 0; 
-                id_ex_mret <= 0; 
-                id_ex_csr_we <= 0;
-                id_ex_md_type <= 0;
-                id_ex_md_operation <= 0;
-                // FPU
-                id_ex_fpu_en <= 0;
-                id_ex_f_reg_write <= 0;
-                id_ex_f_mem_to_reg <= 0;
-                id_ex_f_mem_write <= 0;
-                id_ex_f_to_x <= 0;
-                id_ex_x_to_f <= 0;
-            end
-            else begin
+                id_ex_reg_write <= 1'b0;
+                id_ex_mem_write <= 1'b0;
+                id_ex_mem_read <= 1'b0;
+                id_ex_mem_to_reg <= 1'b0;
+                id_ex_branch <= 1'b0;
+                id_ex_jal <= 1'b0;
+                id_ex_jalr <= 1'b0;
+                id_ex_lui <= 1'b0;
+                id_ex_auipc <= 1'b0;
+                id_ex_pc_in <= 32'd0;
+                id_ex_predict_taken <= 1'b0;
+                id_ex_btb_hit <= 1'b0;
+                id_ex_ecall <= 1'b0; 
+                id_ex_ebreak <= 1'b0; 
+                id_ex_mret <= 1'b0; 
+                id_ex_csr_we <= 1'b0;
+                id_ex_md_type <= 1'b0;
+                id_ex_md_operation <= 3'b0;
+                id_ex_fpu_en <= 1'b0;
+                id_ex_f_reg_write <= 1'b0;
+                id_ex_f_mem_to_reg <= 1'b0;
+                id_ex_f_mem_write <= 1'b0;
+                id_ex_f_to_x <= 1'b0;
+                id_ex_x_to_f <= 1'b0;
+            end else if (dcache_stall || md_alu_stall) begin
+            end else if (load_use_stall) begin
+                id_ex_reg_write <= 1'b0;
+                id_ex_mem_write <= 1'b0;
+                id_ex_mem_read <= 1'b0;
+                id_ex_mem_to_reg <= 1'b0;
+                id_ex_branch <= 1'b0;
+                id_ex_jal <= 1'b0;
+                id_ex_jalr <= 1'b0;
+                id_ex_lui <= 1'b0;
+                id_ex_auipc <= 1'b0;
+                id_ex_ecall <= 1'b0; 
+                id_ex_ebreak <= 1'b0; 
+                id_ex_mret <= 1'b0; 
+                id_ex_csr_we <= 1'b0;
+                id_ex_md_type <= 1'b0;
+                id_ex_md_operation <= 3'b0;
+                id_ex_fpu_en <= 1'b0;
+                id_ex_f_reg_write <= 1'b0;
+                id_ex_f_mem_to_reg <= 1'b0;
+                id_ex_f_mem_write <= 1'b0;
+                id_ex_f_to_x <= 1'b0;
+                id_ex_x_to_f <= 1'b0;
+            end else begin
                 id_ex_pc_plus_4 <= if_id_pc_plus_4;
                 id_ex_pc_in <= if_id_pc_in;
                 id_ex_funct3 <= funct3;
@@ -232,7 +287,6 @@ module id_ex_register (
                 id_ex_csr_we <= csr_we;
                 id_ex_md_type <= md_type;
                 id_ex_md_operation <= md_operation;
-                // FPU
                 id_ex_fpu_en <= fpu_en;
                 id_ex_f_reg_write <= f_reg_write;
                 id_ex_f_mem_to_reg <= f_mem_to_reg;
@@ -247,104 +301,134 @@ module id_ex_register (
             end
         end
     end
+    
 endmodule
 
+
 module ex_mem_register (
-    input clk, reset,
-    input dcache_stall, md_alu_stall, flush, riscv_start, riscv_done,
-    input [31:0] alu_result, id_ex_ext_imm, id_ex_instr,
-    input [11:0] id_ex_branch_target, id_ex_pc_plus_4, id_ex_pc_in,
+    input clk,
+    input reset_n,
+    input dcache_stall,
+    input md_alu_stall,
+    input flush,
+    input riscv_start,
+    input riscv_done,
+    input [31:0] alu_result,
+    input [31:0] id_ex_ext_imm,
     input [4:0] id_ex_rd,
-    input id_ex_mem_write, id_ex_mem_read, id_ex_mem_to_reg, id_ex_reg_write, 
-    input id_ex_branch, branch_taken, id_ex_jal, id_ex_mem_unsigned,
+    input [31:0] id_ex_pc_plus_4,
+    input [31:0] id_ex_pc_in,
+    input [31:0] id_ex_branch_target,
+    input id_ex_mem_write,
+    input id_ex_mem_read,
+    input id_ex_mem_to_reg,
+    input id_ex_reg_write,
+    input id_ex_branch,
+    input branch_taken,
+    input id_ex_jal,
+    input id_ex_mem_unsigned,
     input [1:0] id_ex_mem_size,
     input [31:0] id_ex_read_data2,
     input [31:0] mem_write_data,
-    input id_ex_predict_taken, id_ex_btb_hit, id_ex_ecall, id_ex_ebreak, id_ex_mret,
-    input [11:0] id_ex_csr_addr, input [1:0] id_ex_csr_op, input id_ex_csr_we, 
+    input id_ex_predict_taken,
+    input id_ex_btb_hit,
+    input id_ex_ecall,
+    input id_ex_ebreak,
+    input id_ex_mret,
+    input [11:0] id_ex_csr_addr,
+    input [1:0] id_ex_csr_op,
+    input id_ex_csr_we,
     input [31:0] csr_write_data_in,
-    // FPU signals
+    input [31:0] id_ex_instr,
     input [31:0] fpu_result,
     input [31:0] id_ex_read_f_data2,
     input id_ex_f_reg_write,
     input id_ex_f_mem_to_reg,
     input id_ex_f_mem_write,
-    // Outputs
-    output reg [31:0] ex_mem_alu_result, ex_mem_instr,
+    output reg [31:0] ex_mem_alu_result,
     output reg [4:0] ex_mem_rd,
-    output reg [11:0] ex_mem_branch_target, ex_mem_pc_plus_4, ex_mem_pc_in,
-    output reg ex_mem_mem_write, ex_mem_mem_read, ex_mem_mem_to_reg, ex_mem_reg_write, 
-    output reg ex_mem_branch, ex_mem_branch_taken, ex_mem_jal, ex_mem_mem_unsigned,
+    output reg [31:0] ex_mem_branch_target,
+    output reg [31:0] ex_mem_pc_plus_4,
+    output reg [31:0] ex_mem_pc_in,
+    output reg ex_mem_mem_write,
+    output reg ex_mem_mem_read,
+    output reg ex_mem_mem_to_reg,
+    output reg ex_mem_reg_write,
+    output reg ex_mem_branch,
+    output reg ex_mem_branch_taken,
+    output reg ex_mem_jal,
+    output reg ex_mem_mem_unsigned,
     output reg [1:0] ex_mem_mem_size,
     output reg [31:0] ex_mem_mem_write_data,
-    output reg ex_mem_predict_taken, ex_mem_btb_hit, ex_mem_ecall, ex_mem_ebreak, ex_mem_mret,
-    output reg [11:0] ex_mem_csr_addr, output reg [1:0] ex_mem_csr_op, 
-    output reg ex_mem_csr_we, output reg [31:0] ex_mem_csr_write_data,
-    // FPU outputs
+    output reg ex_mem_predict_taken,
+    output reg ex_mem_btb_hit,
+    output reg ex_mem_ecall,
+    output reg ex_mem_ebreak,
+    output reg ex_mem_mret,
+    output reg [11:0] ex_mem_csr_addr,
+    output reg [1:0] ex_mem_csr_op,
+    output reg ex_mem_csr_we,
+    output reg [31:0] ex_mem_csr_write_data,
+    output reg [31:0] ex_mem_instr,
     output reg [31:0] ex_mem_fpu_result,
     output reg [31:0] ex_mem_f_store_data,
     output reg ex_mem_f_reg_write,
     output reg ex_mem_f_mem_to_reg,
     output reg ex_mem_f_mem_write
 );
-    always @(posedge clk) begin
-        if (reset) begin
-            ex_mem_alu_result <= 0;
-            ex_mem_mem_write_data <= 0;
-            ex_mem_rd <= 0;
-            ex_mem_branch_target <= 0;
-            ex_mem_pc_plus_4 <= 0;
-            ex_mem_pc_in <= 0;
-            ex_mem_branch <= 0;
-            ex_mem_branch_taken <= 0;
-            ex_mem_mem_write <= 0;
-            ex_mem_mem_read <= 0;
-            ex_mem_mem_to_reg <= 0;
-            ex_mem_reg_write <= 0;
-            ex_mem_jal <= 0;
-            ex_mem_mem_unsigned <= 0;
-            ex_mem_mem_size <= 0;
-            ex_mem_predict_taken <= 0;
-            ex_mem_btb_hit <= 0;
-            ex_mem_instr <= 0;
-            ex_mem_ecall <= 0;
-            ex_mem_ebreak <= 0; 
-            ex_mem_mret <= 0;
-            ex_mem_csr_addr <= 0; 
-            ex_mem_csr_op <= 0; 
-            ex_mem_csr_we <= 0; 
-            ex_mem_csr_write_data <= 0;
-            // FPU
-            ex_mem_fpu_result <= 0;
-            ex_mem_f_store_data <= 0;
-            ex_mem_f_reg_write <= 0;
-            ex_mem_f_mem_to_reg <= 0;
-            ex_mem_f_mem_write <= 0;
-        end 
-        else if (riscv_start && !riscv_done) begin
+
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            ex_mem_alu_result <= 32'd0;
+            ex_mem_mem_write_data <= 32'd0;
+            ex_mem_rd <= 5'd0;
+            ex_mem_branch_target <= 32'd0;
+            ex_mem_pc_plus_4 <= 32'd0;
+            ex_mem_pc_in <= 32'd0;
+            ex_mem_branch <= 1'b0;
+            ex_mem_branch_taken <= 1'b0;
+            ex_mem_mem_write <= 1'b0;
+            ex_mem_mem_read <= 1'b0;
+            ex_mem_mem_to_reg <= 1'b0;
+            ex_mem_reg_write <= 1'b0;
+            ex_mem_jal <= 1'b0;
+            ex_mem_mem_unsigned <= 1'b0;
+            ex_mem_mem_size <= 2'b00;
+            ex_mem_predict_taken <= 1'b0;
+            ex_mem_btb_hit <= 1'b0;
+            ex_mem_instr <= 32'd0;
+            ex_mem_ecall <= 1'b0;
+            ex_mem_ebreak <= 1'b0; 
+            ex_mem_mret <= 1'b0;
+            ex_mem_csr_addr <= 12'd0; 
+            ex_mem_csr_op <= 2'b0; 
+            ex_mem_csr_we <= 1'b0; 
+            ex_mem_csr_write_data <= 32'd0;
+            ex_mem_fpu_result <= 32'd0;
+            ex_mem_f_store_data <= 32'd0;
+            ex_mem_f_reg_write <= 1'b0;
+            ex_mem_f_mem_to_reg <= 1'b0;
+            ex_mem_f_mem_write <= 1'b0;
+        end else if (riscv_start && !riscv_done) begin
             if (flush) begin
-                ex_mem_reg_write <= 0;
-                ex_mem_mem_write <= 0;
-                ex_mem_mem_read <= 0;
-                ex_mem_mem_to_reg <= 0;
-                ex_mem_branch <= 0;
-                ex_mem_jal <= 0;
-                ex_mem_pc_in <= 0;
-                ex_mem_predict_taken <= 0;
-                ex_mem_btb_hit <= 0;
-                ex_mem_ecall <= 0;
-                ex_mem_ebreak <= 0; 
-                ex_mem_mret <= 0; 
-                ex_mem_csr_we <= 0;
-                // FPU
-                ex_mem_f_reg_write <= 0;
-                ex_mem_f_mem_write <= 0;
-                ex_mem_f_mem_to_reg <= 0;
-            end
-            else if (dcache_stall || md_alu_stall) begin
-                // Hold
-            end
-            else begin
+                ex_mem_reg_write <= 1'b0;
+                ex_mem_mem_write <= 1'b0;
+                ex_mem_mem_read <= 1'b0;
+                ex_mem_mem_to_reg <= 1'b0;
+                ex_mem_branch <= 1'b0;
+                ex_mem_jal <= 1'b0;
+                ex_mem_pc_in <= 32'd0;
+                ex_mem_predict_taken <= 1'b0;
+                ex_mem_btb_hit <= 1'b0;
+                ex_mem_ecall <= 1'b0;
+                ex_mem_ebreak <= 1'b0; 
+                ex_mem_mret <= 1'b0; 
+                ex_mem_csr_we <= 1'b0;
+                ex_mem_f_reg_write <= 1'b0;
+                ex_mem_f_mem_write <= 1'b0;
+                ex_mem_f_mem_to_reg <= 1'b0;
+            end else if (dcache_stall || md_alu_stall) begin
+            end else begin
                 ex_mem_alu_result <= alu_result;
                 ex_mem_rd <= id_ex_rd;
                 ex_mem_branch_target <= id_ex_branch_target;
@@ -370,7 +454,6 @@ module ex_mem_register (
                 ex_mem_csr_op <= id_ex_csr_op; 
                 ex_mem_csr_we <= id_ex_csr_we; 
                 ex_mem_csr_write_data <= csr_write_data_in;
-                // FPU
                 ex_mem_fpu_result <= fpu_result;
                 ex_mem_f_store_data <= id_ex_read_f_data2;
                 ex_mem_f_reg_write <= id_ex_f_reg_write;
@@ -379,53 +462,56 @@ module ex_mem_register (
             end
         end
     end
+    
 endmodule
 
+
 module mem_wb_register (
-    input clk, reset,
-    input dcache_stall, riscv_start, riscv_done,
+    input clk,
+    input reset_n,
+    input dcache_stall,
+    input riscv_start,
+    input riscv_done,
     input [31:0] mem_read_data,
-    input [11:0] ex_mem_pc_plus_4,
-    input ex_mem_mem_to_reg, ex_mem_reg_write, ex_mem_jal,
+    input [31:0] ex_mem_pc_plus_4,
+    input ex_mem_mem_to_reg,
+    input ex_mem_reg_write,
+    input ex_mem_jal,
     input [31:0] ex_mem_alu_result,
     input [4:0] ex_mem_rd,
     input ex_mem_ecall,
-    // FPU signals
     input [31:0] ex_mem_fpu_result,
     input ex_mem_f_reg_write,
     input ex_mem_f_mem_to_reg,
-    // Outputs
     output reg [31:0] mem_wb_mem_read_data,
-    output reg [11:0] mem_wb_pc_plus_4,
-    output reg mem_wb_mem_to_reg, mem_wb_reg_write, mem_wb_jal,
+    output reg [31:0] mem_wb_pc_plus_4,
+    output reg mem_wb_mem_to_reg,
+    output reg mem_wb_reg_write,
+    output reg mem_wb_jal,
     output reg [31:0] mem_wb_alu_result,
     output reg [4:0] mem_wb_rd,
     output reg mem_wb_ecall,
-    // FPU outputs
     output reg [31:0] mem_wb_fpu_result,
     output reg mem_wb_f_reg_write,
     output reg mem_wb_f_mem_to_reg
 );
-    always @(posedge clk) begin
-        if (reset) begin
-            mem_wb_mem_read_data <= 0;
-            mem_wb_alu_result <= 0;
-            mem_wb_rd <= 0;
-            mem_wb_mem_to_reg <= 0;
-            mem_wb_reg_write <= 0;
-            mem_wb_pc_plus_4 <= 0;
-            mem_wb_jal <= 0;
-            mem_wb_ecall <= 0;
-            // FPU
-            mem_wb_fpu_result <= 0;
-            mem_wb_f_reg_write <= 0;
-            mem_wb_f_mem_to_reg <= 0;
-        end 
-        else if (riscv_start && !riscv_done) begin
+
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            mem_wb_mem_read_data <= 32'd0;
+            mem_wb_alu_result <= 32'd0;
+            mem_wb_rd <= 5'd0;
+            mem_wb_mem_to_reg <= 1'b0;
+            mem_wb_reg_write <= 1'b0;
+            mem_wb_pc_plus_4 <= 32'd0;
+            mem_wb_jal <= 1'b0;
+            mem_wb_ecall <= 1'b0;
+            mem_wb_fpu_result <= 32'd0;
+            mem_wb_f_reg_write <= 1'b0;
+            mem_wb_f_mem_to_reg <= 1'b0;
+        end else if (riscv_start && !riscv_done) begin
             if (dcache_stall) begin
-                // Hold
-            end 
-            else begin
+            end else begin
                 mem_wb_mem_read_data <= mem_read_data;
                 mem_wb_pc_plus_4 <= ex_mem_pc_plus_4;
                 mem_wb_alu_result <= ex_mem_alu_result;
@@ -434,11 +520,11 @@ module mem_wb_register (
                 mem_wb_reg_write <= ex_mem_reg_write;
                 mem_wb_jal <= ex_mem_jal;
                 mem_wb_ecall <= ex_mem_ecall;
-                // FPU
                 mem_wb_fpu_result <= ex_mem_fpu_result;
                 mem_wb_f_reg_write <= ex_mem_f_reg_write;
                 mem_wb_f_mem_to_reg <= ex_mem_f_mem_to_reg;
             end
         end
     end    
+    
 endmodule

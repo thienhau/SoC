@@ -37,6 +37,22 @@ module apb_uart #(
     
     assign uart_irq = rx_valid;
 
+    reg [3:0] tx_state;
+    reg [3:0] tx_tick_cnt; // Đếm 16 tick
+    reg [2:0] tx_bit_cnt;
+    reg [7:0] tx_shift_out;
+    reg       tx_pin_reg;
+
+    localparam TX_IDLE = 0, TX_START = 1, TX_DATA = 2, TX_STOP = 3;
+    
+    reg [3:0] rx_state;
+    reg [3:0] rx_tick_cnt;
+    reg [2:0] rx_bit_cnt;
+    reg [7:0] rx_shift_data;
+    reg       rx_done_pulse;
+
+    localparam RX_IDLE = 0, RX_START = 1, RX_DATA = 2, RX_STOP = 3;
+
     // --- CDC cho RX ---
     reg rx_sync1, rx_sync2;
     always @(posedge pclk or negedge presetn) begin
@@ -108,16 +124,8 @@ module apb_uart #(
     // ==========================================
     // 3. TX CORE FSM
     // ==========================================
-    reg [3:0] tx_state;
-    reg [3:0] tx_tick_cnt; // Đếm 16 tick
-    reg [2:0] tx_bit_cnt;
-    reg [7:0] tx_shift_out;
-    reg       tx_pin_reg;
-
     assign tx = tx_pin_reg;
     assign tx_busy = (tx_state != 0);
-
-    localparam TX_IDLE = 0, TX_START = 1, TX_DATA = 2, TX_STOP = 3;
 
     always @(posedge pclk or negedge presetn) begin
         if (!presetn) begin
@@ -170,14 +178,6 @@ module apb_uart #(
     // ==========================================
     // 4. RX CORE FSM (Oversampling Logic)
     // ==========================================
-    reg [3:0] rx_state;
-    reg [3:0] rx_tick_cnt;
-    reg [2:0] rx_bit_cnt;
-    reg [7:0] rx_shift_data;
-    reg       rx_done_pulse;
-
-    localparam RX_IDLE = 0, RX_START = 1, RX_DATA = 2, RX_STOP = 3;
-
     always @(posedge pclk or negedge presetn) begin
         if (!presetn) begin
             rx_state <= RX_IDLE;

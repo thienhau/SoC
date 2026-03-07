@@ -31,6 +31,19 @@ module apb_i2c #(
     reg [7:0]  reg_cmd;
     reg [7:0]  reg_stat;
 
+    reg [4:0]  state;
+    reg [15:0] tick_cnt;
+    reg [2:0]  bit_cnt;
+    reg [7:0]  shift_reg;
+    reg        core_done;
+    reg        core_rx_ack;
+    reg [7:0]  core_rx_data;
+
+    localparam S_IDLE=0, S_START_A=1, S_START_B=2, S_START_C=3;
+    localparam S_BIT_A=4, S_BIT_B=5, S_BIT_C=6, S_BIT_D=7;
+    localparam S_ACK_A=8, S_ACK_B=9, S_ACK_C=10, S_ACK_D=11;
+    localparam S_STOP_A=12, S_STOP_B=13, S_STOP_C=14;
+
     assign i2c_irq = reg_stat[0];
 
     // --- CDC cho SCL/SDA Input ---
@@ -92,25 +105,12 @@ module apb_i2c #(
     // ==========================================
     // 2. I2C CORE FSM (Bit-Banging State Machine)
     // ==========================================
-    reg [4:0]  state;
-    reg [15:0] tick_cnt;
-    reg [2:0]  bit_cnt;
-    reg [7:0]  shift_reg;
-    reg        core_done;
-    reg        core_rx_ack;
-    reg [7:0]  core_rx_data;
-
     // Điều khiển I2C Pads
     reg scl_out, sda_out;
     assign scl_oen = scl_out; // Open drain: 1 = Hi-Z (bus kéo lên 1), 0 = Pull down
     assign sda_oen = sda_out;
     assign scl_o   = 1'b0;    // Output data luôn là 0 để Pull-down
     assign sda_o   = 1'b0;
-
-    localparam S_IDLE=0, S_START_A=1, S_START_B=2, S_START_C=3;
-    localparam S_BIT_A=4, S_BIT_B=5, S_BIT_C=6, S_BIT_D=7;
-    localparam S_ACK_A=8, S_ACK_B=9, S_ACK_C=10, S_ACK_D=11;
-    localparam S_STOP_A=12, S_STOP_B=13, S_STOP_C=14;
 
     wire tick = (tick_cnt == 0);
 

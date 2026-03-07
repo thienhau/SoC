@@ -1,13 +1,15 @@
-module axi4l_rom_slave #(
-    parameter ADDR_WIDTH = 16,
-    parameter DATA_WIDTH = 32,
-    parameter BASE_ADDR  = 16'h1000, // Địa chỉ bắt đầu của BootROM
-    parameter MEM_DEPTH  = 1024      // 1024 words = 4KB
-)(
-    input  wire                   clk,
-    input  wire                   rst_n,
+`timescale 1ns / 1ps
 
-    // --- Kênh Ghi (Sẽ trả về lỗi vì đây là ROM) ---
+module axi4l_rom_slave #(
+    parameter ADDR_WIDTH = 32,
+    parameter DATA_WIDTH = 32,
+    parameter BASE_ADDR  = 32'h0000_1000,
+    parameter MEM_DEPTH  = 4096 // 4096 words = 16 Kilobytes
+)(
+    input wire clk,
+    input wire rst_n,
+
+    // Kênh Ghi (Sẽ báo lỗi nếu truy cập)
     input  wire [ADDR_WIDTH-1:0]  s_axi_awaddr,
     input  wire                   s_axi_awvalid,
     output reg                    s_axi_awready,
@@ -19,7 +21,7 @@ module axi4l_rom_slave #(
     output reg                    s_axi_bvalid,
     input  wire                   s_axi_bready,
 
-    // --- Kênh Đọc ---
+    // Kênh Đọc
     input  wire [ADDR_WIDTH-1:0]  s_axi_araddr,
     input  wire                   s_axi_arvalid,
     output reg                    s_axi_arready,
@@ -29,109 +31,77 @@ module axi4l_rom_slave #(
     input  wire                   s_axi_rready
 );
 
-    // Tính toán số bit cần thiết để định tuyến index trong mảng nhớ
-    localparam ADDR_LSB = $clog2(DATA_WIDTH/8); // = 2 (Do 32-bit = 4 bytes)
-    localparam INDEX_WIDTH = $clog2(MEM_DEPTH);
+    // Mảng bộ nhớ ROM
+    reg [DATA_WIDTH-1:0] rom_memory [0:MEM_DEPTH-1];
 
-    // Khởi tạo bộ nhớ nội bộ (Ép công cụ tổng hợp thành Block RAM)
-    (* ram_style = "block" *) reg [DATA_WIDTH-1:0] rom_array [0:MEM_DEPTH-1];
-
-    // Nạp firmware vào ROM lúc biên dịch
+    // Nạp mã nhị phân khi tổng hợp mạch (Khởi tạo ROM)
     initial begin
-        $readmemh("bootrom.hex", rom_array);
+        $readmemh("bootrom.hex", rom_memory);
     end
 
     // =========================================================================
-    // XỬ LÝ KÊNH ĐỌC (READ CHANNELS) - Có độ trễ 1 chu kỳ để tương thích BRAM
+    // LOGIC KÊNH GHI (CHẶN HOÀN TOÀN)
     // =========================================================================
-    localparam R_ST_IDLE      = 2'b00;
-    localparam R_ST_MEM_DELAY = 2'b01; // Đợi 1 cycle để BRAM xuất dữ liệu
-    localparam R_ST_RESP      = 2'b10;
-
-    reg [1:0] r_state;
-    reg [INDEX_WIDTH-1:0] read_index;
-
+    // Phản hồi lỗi (SLVERR = 2'b10) khi có bất kỳ yêu cầu ghi nào
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            r_state       <= R_ST_IDLE;
-            s_axi_arready <= 1'b0;
-            s_axi_rvalid  <= 1'b0;
-            s_axi_rresp   <= 2'b00;
-            s_axi_rdata   <= 32'b0;
-            read_index    <= 0;
-        end else begin
-            case (r_state)
-                R_ST_IDLE: begin
-                    s_axi_rvalid <= 1'b0;
-                    // Sẵn sàng nhận địa chỉ
-                    s_axi_arready <= 1'b1; 
-                    
-                    if (s_axi_arvalid && s_axi_arready) begin
-                        s_axi_arready <= 1'b0;
-                        // Tính toán chỉ số mảng (Trừ đi Base Address và dịch bit)
-                        read_index <= (s_axi_araddr - BASE_ADDR) >> ADDR_LSB;
-                        r_state    <= R_ST_MEM_DELAY;
-                    end
-                end
-
-                R_ST_MEM_DELAY: begin
-                    // Đọc dữ liệu từ Block RAM mất 1 chu kỳ clock
-                    s_axi_rdata <= rom_array[read_index];
-                    s_axi_rresp <= 2'b00; // OKAY
-                    s_axi_rvalid <= 1'b1;
-                    r_state     <= R_ST_RESP;
-                end
-
-                R_ST_RESP: begin
-                    // Giữ rvalid ở mức cao cho đến khi Master kéo rready lên
-                    if (s_axi_rready && s_axi_rvalid) begin
-                        s_axi_rvalid <= 1'b0;
-                        r_state      <= R_ST_IDLE;
-                    end
-                end
-            endcase
-        end
-    end
-
-    // =========================================================================
-    // XỬ LÝ KÊNH GHI (WRITE CHANNELS) - Trả về lỗi SLVERR
-    // =========================================================================
-    localparam W_ST_IDLE = 1'b0;
-    localparam W_ST_RESP = 1'b1;
-    reg w_state;
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            w_state       <= W_ST_IDLE;
             s_axi_awready <= 1'b0;
             s_axi_wready  <= 1'b0;
             s_axi_bvalid  <= 1'b0;
             s_axi_bresp   <= 2'b00;
         end else begin
-            case (w_state)
-                W_ST_IDLE: begin
-                    s_axi_awready <= 1'b1;
-                    s_axi_wready  <= 1'b1;
-                    s_axi_bvalid  <= 1'b0;
+            // Bắt tay kênh Ghi
+            if (~s_axi_awready && s_axi_awvalid && s_axi_wvalid) begin
+                s_axi_awready <= 1'b1;
+                s_axi_wready  <= 1'b1;
+            end else begin
+                s_axi_awready <= 1'b0;
+                s_axi_wready  <= 1'b0;
+            end
 
-                    // Chờ Master gửi yêu cầu Ghi
-                    if (s_axi_awvalid && s_axi_wvalid) begin
-                        s_axi_awready <= 1'b0;
-                        s_axi_wready  <= 1'b0;
-                        
-                        s_axi_bresp  <= 2'b10; // SLVERR (Lỗi do cố tình ghi vào ROM)
-                        s_axi_bvalid <= 1'b1;
-                        w_state      <= W_ST_RESP;
-                    end
-                end
+            // Gửi tín hiệu hoàn tất Ghi kèm mã Lỗi
+            if (s_axi_awready && s_axi_awvalid && s_axi_wready && s_axi_wvalid && ~s_axi_bvalid) begin
+                s_axi_bvalid <= 1'b1;
+                s_axi_bresp  <= 2'b10; // 2'b10 = SLVERR (Lỗi truy cập phần cứng)
+            end else if (s_axi_bready && s_axi_bvalid) begin
+                s_axi_bvalid <= 1'b0;
+            end
+        end
+    end
 
-                W_ST_RESP: begin
-                    if (s_axi_bready && s_axi_bvalid) begin
-                        s_axi_bvalid <= 1'b0;
-                        w_state      <= W_ST_IDLE;
-                    end
-                end
-            endcase
+    // =========================================================================
+    // LOGIC KÊNH ĐỌC
+    // =========================================================================
+    reg [ADDR_WIDTH-1:0] read_addr_latch;
+    wire [11:0] read_index = (read_addr_latch - BASE_ADDR) >> 2;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            s_axi_arready   <= 1'b0;
+            read_addr_latch <= 32'h0;
+        end else begin
+            if (~s_axi_arready && s_axi_arvalid) begin
+                s_axi_arready   <= 1'b1;
+                read_addr_latch <= s_axi_araddr;
+            end else begin
+                s_axi_arready <= 1'b0;
+            end
+        end
+    end
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            s_axi_rvalid <= 1'b0;
+            s_axi_rresp  <= 2'b00;
+            s_axi_rdata  <= 32'h0;
+        end else begin
+            if (s_axi_arready && s_axi_arvalid && ~s_axi_rvalid) begin
+                s_axi_rvalid <= 1'b1;
+                s_axi_rresp  <= 2'b00; // Trả về OKAY
+                s_axi_rdata  <= rom_memory[read_index];
+            end else if (s_axi_rvalid && s_axi_rready) begin
+                s_axi_rvalid <= 1'b0;
+            end
         end
     end
 

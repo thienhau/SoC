@@ -53,6 +53,7 @@ module top_soc (
     // Tín hiệu từ Core ra Cache
     wire [15:0] sys_reset_vector;
     wire        plic_ext_irq;
+    wire        cpu_wfi_sleep;
     wire        cpu_ic_req, cpu_dc_rd, cpu_dc_wr;
     wire [15:0] cpu_ic_addr, cpu_dc_addr;
     wire [31:0] cpu_ic_rdata, cpu_dc_wdata, cpu_dc_rdata;
@@ -74,12 +75,35 @@ module top_soc (
     wire [15:0] dtm_addr;
     wire [31:0] dtm_wdata, dtm_rdata;
 
+    // Tín hiệu Clock Gating từ System Controller
+    wire clk_en_cpu, clk_en_dbg;
+    wire clk_en_tmr, clk_en_urt, clk_en_spi, clk_en_i2c, clk_en_gpo, clk_en_acc;
+    
+    wire clk_cpu_gated;
+    wire clk_dbg_gated;
+    wire clk_tmr_gated;
+    wire clk_urt_gated;
+    wire clk_spi_gated;
+    wire clk_i2c_gated;
+    wire clk_gpo_gated;
+    wire clk_acc_gated;
+
+    // Instantiate ICG Cells
+    clock_gate CG_CPU   (.clk_in(clk_sys), .en(clk_en_cpu), .test_en(1'b0), .clk_out(clk_cpu_gated));
+    clock_gate CG_DBG   (.clk_in(clk_sys), .en(clk_en_dbg), .test_en(1'b0), .clk_out(clk_dbg_gated));
+    clock_gate CG_TMR   (.clk_in(clk_sys), .en(clk_en_tmr), .test_en(1'b0), .clk_out(clk_tmr_gated));
+    clock_gate CG_URT   (.clk_in(clk_sys), .en(clk_en_urt), .test_en(1'b0), .clk_out(clk_urt_gated));
+    clock_gate CG_SPI   (.clk_in(clk_sys), .en(clk_en_spi), .test_en(1'b0), .clk_out(clk_spi_gated));
+    clock_gate CG_I2C   (.clk_in(clk_sys), .en(clk_en_i2c), .test_en(1'b0), .clk_out(clk_i2c_gated));
+    clock_gate CG_GPO   (.clk_in(clk_sys), .en(clk_en_gpo), .test_en(1'b0), .clk_out(clk_gpo_gated));
+    clock_gate CG_ACC   (.clk_in(clk_sys), .en(clk_en_acc), .test_en(1'b0), .clk_out(clk_acc_gated));
+
     // -------------------------------------------------------------------------
     // 3. KHỐI ĐIỀU KHIỂN TRUNG TÂM (RISC-V CORE & CACHE)
     // -------------------------------------------------------------------------
     riscv_pipeline CPU_CORE (
-        .clk(clk_sys), .reset(!sys_rst_n), .riscv_start(1'b1),
-        .external_irq_in(plic_ext_irq), .reset_vector_in(sys_reset_vector),
+        .clk(clk_cpu_gated), .reset(!sys_rst_n), .riscv_start(1'b1),
+        .external_irq_in(plic_ext_irq), .reset_vector_in(sys_reset_vector), .wfi_sleep_out(cpu_wfi_sleep),
         .icache_read_req(cpu_ic_req), .icache_addr(cpu_ic_addr), .icache_read_data(cpu_ic_rdata), .icache_stall(cpu_ic_stall),
         .dcache_read_req(cpu_dc_rd), .dcache_write_req(cpu_dc_wr), .dcache_addr(cpu_dc_addr),
         .dcache_write_data(cpu_dc_wdata), .dcache_read_data(cpu_dc_rdata), .dcache_stall(cpu_dc_stall),
@@ -112,7 +136,7 @@ module top_soc (
     debug_module DBG_MODULE_INST (
         .tck(jtag_tck), .trst_n(jtag_trst_n), .i_shift_dr(j_shift), .i_capture_dr(j_capture),
         .i_update_dr(j_update), .i_sel_dmi(j_sel_dmi), .i_tdi(jtag_tdi), .o_tdo(j_tdo_dmi),
-        .clk_sys(clk_sys), .rst_sys_n(sys_rst_n),
+        .clk_sys(clk_dbg_gated), .rst_sys_n(sys_rst_n),
         .req_sys(dtm_req), .op_sys(dtm_op), .addr_sys(dtm_addr), .wdata_sys(dtm_wdata),
         .ack_sys(dtm_ack), .resp_sys(dtm_resp), .rdata_sys(dtm_rdata)
     );
@@ -251,8 +275,25 @@ module top_soc (
 
     // --- SYSCON: Quản lý Reset Vector ---
     apb_syscon SYSCON_INST (
-        .pclk(clk_sys), .presetn(sys_rst_n), .psel(sel_syscon), .penable(apb_penable), .pwrite(apb_pwrite), .paddr(apb_paddr), .pwdata(apb_pwdata),
-        .pready(ready_syscon), .prdata(rdata_syscon), .pslverr(err_syscon), .o_reset_vector(sys_reset_vector)
+        .pclk(clk_sys), .presetn(sys_rst_n), 
+        .psel(sel_syscon), .penable(apb_penable), .pwrite(apb_pwrite), 
+        .paddr(apb_paddr), .pwdata(apb_pwdata),
+        .pready(ready_syscon), .prdata(rdata_syscon), .pslverr(err_syscon), 
+        .o_reset_vector(sys_reset_vector),
+        
+        // Quản lý năng lượng WFI
+        .i_wfi_sleep(cpu_wfi_sleep),
+        .i_ext_irq(plic_ext_irq),    // Báo thức CPU khi có ngắt
+        
+        // Xuất tín hiệu Enable Clock tới các ICG
+        .o_cpu_clk_en(clk_en_cpu),
+        .o_dbg_clk_en(clk_en_dbg),
+        .o_tmr_clk_en(clk_en_tmr),
+        .o_urt_clk_en(clk_en_urt),
+        .o_spi_clk_en(clk_en_spi),
+        .o_i2c_clk_en(clk_en_i2c),
+        .o_gpo_clk_en(clk_en_gpo),
+        .o_acc_clk_en(clk_en_acc)
     );
 
     // --- PLIC: Interrupt Controller ---
@@ -288,21 +329,21 @@ module top_soc (
     assign ready_plic = 1'b1; assign err_plic = 1'b0;
 
     // --- Timer ---
-    apb_timer TIMER_INST (.pclk(clk_sys), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_timer), .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_timer), .prdata(rdata_timer), .pslverr(err_timer), .timer_irq(irq_timer));
+    apb_timer TIMER_INST (.pclk(clk_tmr_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_timer), .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_timer), .prdata(rdata_timer), .pslverr(err_timer), .timer_irq(irq_timer));
     
     // --- UART ---
-    apb_uart  UART_INST  (.pclk(clk_sys), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_uart),  .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_uart),  .prdata(rdata_uart),  .pslverr(err_uart),  .rx(uart_rx), .tx(uart_tx), .uart_irq(irq_uart));
+    apb_uart  UART_INST  (.pclk(clk_urt_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_uart),  .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_uart),  .prdata(rdata_uart),  .pslverr(err_uart),  .rx(uart_rx), .tx(uart_tx), .uart_irq(irq_uart));
     
     // --- SPI ---
-    apb_spi   SPI_INST   (.pclk(clk_sys), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_spi),   .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_spi),   .prdata(rdata_spi),   .pslverr(err_spi),   .sclk(spi_sclk), .mosi(spi_mosi), .miso(spi_miso), .cs_n(spi_cs_n), .spi_irq(irq_spi));
+    apb_spi   SPI_INST   (.pclk(clk_spi_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_spi),   .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_spi),   .prdata(rdata_spi),   .pslverr(err_spi),   .sclk(spi_sclk), .mosi(spi_mosi), .miso(spi_miso), .cs_n(spi_cs_n), .spi_irq(irq_spi));
     
     // --- I2C ---
-    apb_i2c   I2C_INST   (.pclk(clk_sys), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_i2c),   .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_i2c),   .prdata(rdata_i2c),   .pslverr(err_i2c),   .scl_o(i2c_scl_o), .scl_oen(i2c_scl_oen), .scl_i(i2c_scl_i), .sda_o(i2c_sda_o), .sda_oen(i2c_sda_oen), .sda_i(i2c_sda_i), .i2c_irq(irq_i2c));
+    apb_i2c   I2C_INST   (.pclk(clk_i2c_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_i2c),   .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_i2c),   .prdata(rdata_i2c),   .pslverr(err_i2c),   .scl_o(i2c_scl_o), .scl_oen(i2c_scl_oen), .scl_i(i2c_scl_i), .sda_o(i2c_sda_o), .sda_oen(i2c_sda_oen), .sda_i(i2c_sda_i), .i2c_irq(irq_i2c));
     
     // --- GPIO ---
-    apb_gpio  GPIO_INST  (.pclk(clk_sys), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_gpio),  .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_gpio),  .prdata(rdata_gpio),  .pslverr(err_gpio),  .gpio_in(gpio_in), .gpio_out(gpio_out), .gpio_dir(gpio_dir), .gpio_irq(irq_gpio));
+    apb_gpio  GPIO_INST  (.pclk(clk_gpo_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_gpio),  .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_gpio),  .prdata(rdata_gpio),  .pslverr(err_gpio),  .gpio_in(gpio_in), .gpio_out(gpio_out), .gpio_dir(gpio_dir), .gpio_irq(irq_gpio));
     
     // --- Accelerator (Dự phòng) ---
-    apb_accel ACCEL_INST (.pclk(clk_sys), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_accel), .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_accel), .prdata(rdata_accel), .pslverr(err_accel), .accel_irq(irq_accel));
+    apb_accel ACCEL_INST (.pclk(clk_acc_gated), .presetn(sys_rst_n), .paddr(apb_paddr[11:0]), .psel(sel_accel), .penable(apb_penable), .pwrite(apb_pwrite), .pwdata(apb_pwdata), .pstrb(apb_pstrb), .pready(ready_accel), .prdata(rdata_accel), .pslverr(err_accel), .accel_irq(irq_accel));
 
 endmodule

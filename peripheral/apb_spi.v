@@ -33,6 +33,14 @@ module apb_spi #(
     reg        spi_start;
     wire       spi_busy;
     reg        spi_done;
+
+    reg [2:0]  state;
+    reg [31:0] clk_cnt;
+    reg [2:0]  bit_cnt;
+    reg [7:0]  spi_tx_shift;
+    reg [7:0]  spi_rx_shift;
+    reg        sclk_reg;
+    reg        spi_done_pulse;
     
     assign spi_irq = spi_done;
 
@@ -88,14 +96,6 @@ module apb_spi #(
     // ==========================================
     // 2. SPI CORE FSM
     // ==========================================
-    reg [2:0]  state;
-    reg [31:0] clk_cnt;
-    reg [2:0]  bit_cnt;
-    reg [7:0]  spi_tx_shift;
-    reg [7:0]  spi_rx_shift;
-    reg        sclk_reg;
-    reg        spi_done_pulse;
-
     assign sclk = (state == 0) ? reg_ctrl[1] : sclk_reg;
     assign mosi = spi_tx_shift[7]; // MSB first
     assign spi_busy = (state != 0);
