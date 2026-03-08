@@ -288,13 +288,13 @@ module top_soc (
     );
 
     // Slaves instances
-    axi4l_rom_slave BOOT_ROM_INST (
+    axi_rom BOOT_ROM_INST (
         .clk(clk_bus), .rst_n(bus_rst_n),
         .s_axi_awaddr(32'b0), .s_axi_awvalid(1'b0), .s_axi_awready(), .s_axi_wdata(32'b0), .s_axi_wstrb(4'b0), .s_axi_wvalid(1'b0), .s_axi_wready(), .s_axi_bresp(), .s_axi_bvalid(), .s_axi_bready(1'b0),
         .s_axi_araddr(s0_araddr), .s_axi_arvalid(s0_arvalid), .s_axi_arready(s0_arready), .s_axi_rdata(s0_rdata), .s_axi_rresp(s0_rresp), .s_axi_rvalid(s0_rvalid), .s_axi_rready(s0_rready)
     );
 
-    axi4l_ram_slave SYSTEM_RAM_INST (
+    axi_ram SYSTEM_RAM_INST (
         .clk(clk_bus), .rst_n(bus_rst_n),
         .s_axi_awaddr(s1_awaddr), .s_axi_awvalid(s1_awvalid), .s_axi_awready(s1_awready), 
         .s_axi_wdata(s1_wdata), .s_axi_wstrb(s1_wstrb), .s_axi_wvalid(s1_wvalid), .s_axi_wready(s1_wready), 

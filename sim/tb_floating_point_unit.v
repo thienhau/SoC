@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module tb_fpu_unit();
+module tb_floating_point_unit();
 
     // =========================================================================
     // SIGNALS & INSTANTIATION
@@ -40,8 +40,8 @@ module tb_fpu_unit();
     localparam FOP_ADD      = 5'b00000;
     localparam FOP_SUB      = 5'b00001;
     localparam FOP_MUL      = 5'b00010;
-    localparam FOP_CVT_W_S  = 5'b00011; // Float to Int
-    localparam FOP_CVT_S_W  = 5'b00100; // Int to Float
+    localparam FOP_CVT_W_S  = 5'b00011; 
+    localparam FOP_CVT_S_W  = 5'b00100; 
     localparam FOP_EQ       = 5'b00101;
     localparam FOP_LT       = 5'b00110;
     localparam FOP_LE       = 5'b00111;
@@ -49,30 +49,10 @@ module tb_fpu_unit();
     localparam FOP_SQRT     = 5'b01001;
     localparam FOP_MIN      = 5'b01010;
     localparam FOP_MAX      = 5'b01011;
-    localparam FOP_MV_X_W   = 5'b01111; // Bitcast F -> I
-    localparam FOP_MV_W_X   = 5'b10000; // Bitcast I -> F
-    localparam FOP_CVT_WU_S = 5'b10010; // Float to UInt
-    localparam FOP_CVT_S_WU = 5'b10011; // UInt to Float
-
-    // =========================================================================
-    // IEEE-754 CONSTANTS (HEX)
-    // =========================================================================
-    localparam F_ZERO  = 32'h0000_0000;
-    localparam F_ONE   = 32'h3F80_0000; // 1.0
-    localparam F_TWO   = 32'h4000_0000; // 2.0
-    localparam F_THREE = 32'h4040_0000; // 3.0
-    localparam F_FOUR  = 32'h4080_0000; // 4.0
-    localparam F_FIVE  = 32'h40A0_0000; // 5.0
-    localparam F_SEVEN = 32'h40E0_0000; // 7.0
-    localparam F_TEN   = 32'h4120_0000; // 10.0
-    localparam F_16    = 32'h4180_0000; // 16.0
-    localparam F_1P5   = 32'h3FC0_0000; // 1.5
-    localparam F_2P5   = 32'h4020_0000; // 2.5
-    localparam F_3P5   = 32'h4060_0000; // 3.5
-    localparam F_M_ONE = 32'hBF80_0000; // -1.0
-    localparam F_M_FIVE= 32'hC0A0_0000; // -5.0
-    localparam F_QNAN  = 32'h7FC0_0000; // NaN
-    localparam F_INF   = 32'h7F80_0000; // Infinity
+    localparam FOP_MV_X_W   = 5'b01111; 
+    localparam FOP_MV_W_X   = 5'b10000; 
+    localparam FOP_CVT_WU_S = 5'b10010; 
+    localparam FOP_CVT_S_WU = 5'b10011; 
 
     // =========================================================================
     // SCOREBOARD & EXECUTION TASK
@@ -80,7 +60,7 @@ module tb_fpu_unit();
     integer test_passed = 0;
     integer test_failed = 0;
 
-    task run_fpu_test(input [4:0] op, input [31:0] a, input [31:0] b, input [31:0] exp_res, input [8*40:1] test_name);
+    task run_fpu_test(input [4:0] op, input [31:0] a, input [31:0] b, input [31:0] exp_res, input [8*60:1] test_name);
         begin
             @(posedge clk);
             fpu_op    = op;
@@ -91,17 +71,15 @@ module tb_fpu_unit();
             @(posedge clk);
             fpu_start = 0;
 
-            // Chờ FPU xử lý (FSM có thể chạy nhiều vòng lặp)
             wait(fpu_done == 1'b1);
             
-            // Check kết quả (Dùng === để bắt cả bit X/Z nếu có)
-            // Đặc cách cho NaN vì NaN có thể có nhiều giá trị Mantissa khác nhau
+            // Check logic: Exact match OR NaN wildcard
             if (result === exp_res || (exp_res[30:23] == 8'hFF && result[30:23] == 8'hFF && result[22:0] != 0)) begin
                 $display("  [PASS] %0s", test_name);
                 test_passed = test_passed + 1;
             end else begin
                 $display("  [FAIL] %0s", test_name);
-                $display("         Expected: %h, Got: %h", exp_res, result);
+                $display("         Expected: %h, Got: %h <--- ERROR!", exp_res, result);
                 test_failed = test_failed + 1;
             end
             @(posedge clk);
@@ -109,67 +87,92 @@ module tb_fpu_unit();
     endtask
 
     // =========================================================================
-    // MAIN TEST SUITE
+    // 12-PHASE TORTURE SUITE
     // =========================================================================
     initial begin
         fpu_start = 0; fpu_op = 0; operand_a = 0; operand_b = 0;
         reset_n = 0; #50 reset_n = 1; #20;
 
         $display("\n=========================================================");
-        $display(" PHASE 1: BASIC ARITHMETIC (ADD, SUB, MUL, DIV)");
-        $display("=========================================================");
-        run_fpu_test(FOP_ADD, F_1P5, F_2P5, F_FOUR,  "1.5 + 2.5 = 4.0");
-        run_fpu_test(FOP_SUB, F_FIVE, F_ONE, F_FOUR,  "5.0 - 1.0 = 4.0");
-        run_fpu_test(FOP_MUL, F_TWO, F_3P5, F_SEVEN, "2.0 * 3.5 = 7.0");
-        run_fpu_test(FOP_DIV, F_TEN, F_2P5, F_FOUR,  "10.0 / 2.5 = 4.0");
+        $display(" PHASE 1: BASIC ARITHMETIC (WARM-UP)");
+        run_fpu_test(FOP_ADD, 32'h3FC0_0000, 32'h4020_0000, 32'h4080_0000, "1.5 + 2.5 = 4.0");
+        run_fpu_test(FOP_SUB, 32'h40A0_0000, 32'h3F80_0000, 32'h4080_0000, "5.0 - 1.0 = 4.0");
+        run_fpu_test(FOP_MUL, 32'h4000_0000, 32'h4060_0000, 32'h40E0_0000, "2.0 * 3.5 = 7.0");
+        run_fpu_test(FOP_DIV, 32'h4120_0000, 32'h4020_0000, 32'h4080_0000, "10.0 / 2.5 = 4.0");
 
         $display("\n=========================================================");
         $display(" PHASE 2: MATHEMATICAL FUNCTIONS (SQRT)");
-        $display("=========================================================");
-        run_fpu_test(FOP_SQRT, F_16, F_ZERO, F_FOUR, "sqrt(16.0) = 4.0");
-        run_fpu_test(FOP_SQRT, F_FOUR, F_ZERO, F_TWO,  "sqrt(4.0) = 2.0");
-        run_fpu_test(FOP_SQRT, F_M_ONE, F_ZERO, F_QNAN, "sqrt(-1.0) = NaN");
+        run_fpu_test(FOP_SQRT, 32'h4180_0000, 0, 32'h4080_0000, "sqrt(16.0) = 4.0");
+        run_fpu_test(FOP_SQRT, 32'h4080_0000, 0, 32'h4000_0000, "sqrt(4.0) = 2.0");
 
         $display("\n=========================================================");
         $display(" PHASE 3: COMPARISONS & MIN/MAX");
-        $display("=========================================================");
-        run_fpu_test(FOP_EQ,  F_FIVE, F_FIVE, 32'd1,   "5.0 == 5.0 -> True(1)");
-        run_fpu_test(FOP_LT,  F_ONE,  F_FIVE, 32'd1,   "1.0 < 5.0  -> True(1)");
-        run_fpu_test(FOP_LE,  F_TEN,  F_TEN,  32'd1,   "10.0 <= 10.0 -> True(1)");
-        run_fpu_test(FOP_MIN, F_M_ONE, F_FIVE, F_M_ONE, "min(-1.0, 5.0) = -1.0");
-        run_fpu_test(FOP_MAX, F_THREE, F_SEVEN, F_SEVEN, "max(3.0, 7.0) = 7.0");
+        run_fpu_test(FOP_EQ,  32'h40A0_0000, 32'h40A0_0000, 32'd1,        "5.0 == 5.0 -> True");
+        run_fpu_test(FOP_LT,  32'h3F80_0000, 32'h40A0_0000, 32'd1,        "1.0 < 5.0  -> True");
+        run_fpu_test(FOP_MIN, 32'hBF80_0000, 32'h40A0_0000, 32'hBF80_0000, "min(-1.0, 5.0) = -1.0");
+        run_fpu_test(FOP_MAX, 32'h4040_0000, 32'h40E0_0000, 32'h40E0_0000, "max(3.0, 7.0) = 7.0");
 
         $display("\n=========================================================");
         $display(" PHASE 4: CONVERSIONS (FLOAT <-> INT)");
-        $display("=========================================================");
-        run_fpu_test(FOP_CVT_W_S,  F_FIVE, F_ZERO, 32'd5, "Float(5.0) -> Int(5)");
-        run_fpu_test(FOP_CVT_S_W,  32'hFFFF_FFFB, F_ZERO, F_M_FIVE, "Int(-5) -> Float(-5.0)"); // -5 int = 0xFFFFFFFB
-        run_fpu_test(FOP_CVT_WU_S, F_TEN, F_ZERO, 32'd10, "Float(10.0) -> UInt(10)");
-        run_fpu_test(FOP_CVT_S_WU, 32'd16, F_ZERO, F_16, "UInt(16) -> Float(16.0)");
+        run_fpu_test(FOP_CVT_W_S,  32'h40A0_0000, 0, 32'd5,           "Float(5.0) -> Int(5)");
+        run_fpu_test(FOP_CVT_S_W,  32'hFFFF_FFFB, 0, 32'hC0A0_0000,  "Int(-5) -> Float(-5.0)"); 
+        run_fpu_test(FOP_CVT_WU_S, 32'h4120_0000, 0, 32'd10,          "Float(10.0) -> UInt(10)");
+        run_fpu_test(FOP_CVT_S_WU, 32'd16,          0, 32'h4180_0000,  "UInt(16) -> Float(16.0)");
 
         $display("\n=========================================================");
-        $display(" PHASE 5: BITCAST MOVES");
-        $display("=========================================================");
-        run_fpu_test(FOP_MV_X_W, F_TEN, F_ZERO, F_TEN, "MV_X_W (F->I Bitcast)");
-        run_fpu_test(FOP_MV_W_X, F_TEN, F_ZERO, F_TEN, "MV_W_X (I->F Bitcast)");
+        $display(" PHASE 5: BITCAST MOVES (RAW BITS)");
+        run_fpu_test(FOP_MV_X_W, 32'h4120_0000, 0, 32'h4120_0000, "F->I Bitcast");
+        run_fpu_test(FOP_MV_W_X, 32'h4120_0000, 0, 32'h4120_0000, "I->F Bitcast");
 
         $display("\n=========================================================");
-        $display(" PHASE 6: EDGE CASES");
-        $display("=========================================================");
-        run_fpu_test(FOP_ADD, F_FIVE, F_ZERO, F_FIVE, "5.0 + 0.0 = 5.0");
-        run_fpu_test(FOP_MUL, F_TEN,  F_ZERO, F_ZERO, "10.0 * 0.0 = 0.0");
-        run_fpu_test(FOP_DIV, F_TEN,  F_ZERO, F_INF,  "10.0 / 0.0 = Infinity"); // Kiểm tra FPU của bạn có chia cho 0 ra Inf không
+        $display(" PHASE 6: EDGE CASES (ZERO, INF, NAN)");
+        run_fpu_test(FOP_DIV,  32'h4120_0000, 0, 32'h7F80_0000, "10.0 / 0.0 = Infinity"); 
+        run_fpu_test(FOP_SQRT, 32'hBF80_0000, 0, 32'h7FC0_0000, "sqrt(-1.0) = NaN");
+        run_fpu_test(FOP_ADD,  32'h40A0_0000, 0, 32'h40A0_0000, "5.0 + 0.0 = 5.0");
+
+        $display("\n=========================================================");
+        $display(" PHASE 7: EXTREME - CATASTROPHIC CANCELLATION");
+        // (1 + 2^-23) - 1 = 2^-23. Hex: 34000000
+        run_fpu_test(FOP_SUB, 32'h3F80_0001, 32'h3F80_0000, 32'h3400_0000, "1.0000001 - 1.0 = 2^-23");
+        run_fpu_test(FOP_SUB, 32'h47C3_5000, 32'h47C3_4FFF, 32'h3C00_0000, "100000 - 99999.99 = 0.0078");
+
+        $display("\n=========================================================");
+        $display(" PHASE 8: EXTREME - ABSORPTION & STICKY BIT");
+        run_fpu_test(FOP_ADD, 32'h4B80_0000, 32'h3F80_0000, 32'h4B80_0000, "16777216.0 + 1.0 (Absorbed)");
+        run_fpu_test(FOP_ADD, 32'h4B7F_FFFF, 32'h3F80_0000, 32'h4B80_0000, "16777215.0 + 1.0 (Carry)");
+
+        $display("\n=========================================================");
+        $display(" PHASE 9: EXTREME - IRRATIONAL & REPEATING");
+        run_fpu_test(FOP_DIV, 32'h3F80_0000, 32'h4040_0000, 32'h3EAA_AAAB, "1.0 / 3.0 (Round Up)");
+        run_fpu_test(FOP_DIV, 32'h43B1_8000, 32'h42E2_0000, 32'h4049_0FDC, "355/113 = Pi (Round Up)");
+        run_fpu_test(FOP_SQRT, 32'h4000_0000, 0, 32'h3FB5_04F3, "sqrt(2.0) (Restoring)");
+        run_fpu_test(FOP_SQRT, 32'h4040_0000, 0, 32'h3FDD_B3D7, "sqrt(3.0) (Restoring)");
+
+        $display("\n=========================================================");
+        $display(" PHASE 10: EXTREME - BOUNDARY MULTIPLICATION");
+        run_fpu_test(FOP_MUL, 32'h3FFF_FFFF, 32'h3FFF_FFFF, 32'h407F_FFFE, "MaxMant * MaxMant");
+        run_fpu_test(FOP_MUL, 32'h7000_0000, 32'h0F00_0000, 32'h3F80_0000, "2^97 * 2^-97 = 1.0");
+
+        $display("\n=========================================================");
+        $display(" PHASE 11: FLOAT-TO-INT TRUNCATION");
+        run_fpu_test(FOP_CVT_W_S, 32'h407F_5C29, 0, 32'd3,           "Float(3.99) -> Int(3)");
+        run_fpu_test(FOP_CVT_W_S, 32'hC03F_5C29, 0, 32'hFFFF_FFFE, "Float(-2.99) -> Int(-2)");
+
+        $display("\n=========================================================");
+        $display(" PHASE 12: CHAIN REACTION & TINY DECIMALS");
+        run_fpu_test(FOP_DIV, 32'h3F80_0000, 32'h4120_0000, 32'h3DCC_CCCD, "1.0 / 10.0 = 0.1");
+        run_fpu_test(FOP_MUL, 32'h3DCC_CCCD, 32'h4120_0000, 32'h3F80_0000, "0.1 * 10.0 = 1.0");
 
         #200;
         $display("\n=========================================================");
         $display(" FPU VERIFICATION SCOREBOARD");
         $display("=========================================================");
-        $display(" Total Tests : %0d", test_passed + test_failed);
-        $display(" PASSED      : %0d", test_passed);
-        $display(" FAILED      : %0d", test_failed);
+        $display(" Total Tests Conducted : %0d", test_passed + test_failed);
+        $display(" PASSED                : %0d", test_passed);
+        $display(" FAILED                : %0d", test_failed);
         
         if (test_failed == 0) 
-            $display("\n >>> SUCCESS! ALL TESTS PASSED! <<<\n");
+            $display("\n >>> SUCCESS! ALL TEST PASSED! <<<\n");
         else 
             $display("\n >>> CRITICAL FAILURE DETECTED! <<<\n");
         

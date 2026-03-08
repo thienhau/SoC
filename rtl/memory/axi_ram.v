@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module axi4l_ram_slave #(
+module axi_ram #(
     parameter ADDR_WIDTH = 32,
     parameter DATA_WIDTH = 32,
     parameter BASE_ADDR  = 32'h8000_0000,

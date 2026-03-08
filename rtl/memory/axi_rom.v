@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module axi4l_rom_slave #(
+module axi_rom #(
     parameter ADDR_WIDTH = 32,
     parameter DATA_WIDTH = 32,
     parameter BASE_ADDR  = 32'h0000_1000, // Địa chỉ bắt đầu của ROM
