@@ -1,116 +1,110 @@
 `timescale 1ns / 1ps
 
-module axi_spi_flash (
-    input  wire        aclk,
-    input  wire        aresetn,
+module axi_spi_flash #(
+    parameter ADDR_WIDTH = 32,
+    parameter DATA_WIDTH = 32
+)(
+    input wire clk,
+    input wire rst_n,
 
-    // --- AXI4 Read Interface ---
-    input  wire [3:0]  arid,
-    input  wire [31:0] araddr,
-    input  wire [7:0]  arlen,
-    input  wire [2:0]  arsize,
-    input  wire [1:0]  arburst,
-    input  wire        arvalid,
-    output reg         arready,
+    // --- Kênh Ghi (Bị từ chối - Slave Error) ---
+    input  wire [ADDR_WIDTH-1:0] s_axi_awaddr,
+    input  wire                  s_axi_awvalid,
+    output reg                   s_axi_awready,
+    input  wire [DATA_WIDTH-1:0] s_axi_wdata,
+    input  wire [3:0]            s_axi_wstrb,
+    input  wire                  s_axi_wvalid,
+    output reg                   s_axi_wready,
+    output reg  [1:0]            s_axi_bresp,
+    output reg                   s_axi_bvalid,
+    input  wire                  s_axi_bready,
 
-    output reg  [3:0]  rid,
-    output reg  [31:0] rdata,
-    output reg  [1:0]  rresp,
-    output reg         rlast,
-    output reg         rvalid,
-    input  wire        rready,
+    // --- Kênh Đọc (Chức năng chính) ---
+    input  wire [ADDR_WIDTH-1:0] s_axi_araddr,
+    input  wire                  s_axi_arvalid,
+    output reg                   s_axi_arready,
+    output reg  [DATA_WIDTH-1:0] s_axi_rdata,
+    output reg  [1:0]            s_axi_rresp,
+    output reg                   s_axi_rvalid,
+    input  wire                  s_axi_rready,
 
     // --- SPI Physical Interface ---
-    output reg         spi_cs_n,
-    output reg         spi_sck,
-    output reg         spi_mosi,
-    input  wire        spi_miso
+    output reg                   spi_cs_n,
+    output reg                   spi_sck,
+    output wire                  spi_mosi,
+    input  wire                  spi_miso
 );
 
-    localparam IDLE  = 3'd0;
-    localparam SETUP = 3'd1;
-    localparam SHIFT = 3'd2;
-    localparam DONE  = 3'd3;
+    localparam IDLE  = 2'd0;
+    localparam SETUP = 2'd1;
+    localparam SHIFT = 2'd2;
+    localparam DONE  = 2'd3;
 
-    reg [2:0]  state;
+    reg [1:0]  state;
     reg [63:0] shift_reg; 
     reg [6:0]  bit_cnt;
     reg        sck_en;
-    reg [3:0]  latched_id;
 
-    always @(posedge aclk or negedge aresetn) begin
-        if (!aresetn) begin
-            state      <= IDLE;
-            arready    <= 1'b1;
-            rvalid     <= 1'b0;
-            rlast      <= 1'b0;
-            rresp      <= 2'b00;
-            spi_cs_n   <= 1'b1;
-            spi_sck    <= 1'b0;
-            spi_mosi   <= 1'b0;
-            bit_cnt    <= 7'd63;
-            sck_en     <= 1'b0;
-            latched_id <= 4'b0000;
+    assign spi_mosi = shift_reg[bit_cnt];
+
+    // --- Logic Kênh Ghi (Báo lỗi SLVERR) ---
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            s_axi_awready <= 1'b0; s_axi_wready <= 1'b0;
+            s_axi_bvalid  <= 1'b0; s_axi_bresp  <= 2'b00;
+        end else begin
+            if (s_axi_awvalid && s_axi_wvalid && !s_axi_bvalid) begin
+                s_axi_awready <= 1'b1;
+                s_axi_wready  <= 1'b1;
+                s_axi_bvalid  <= 1'b1;
+                s_axi_bresp   <= 2'b10; // SLVERR: Flash là Read-Only qua kênh này
+            end else if (s_axi_bready && s_axi_bvalid) begin
+                s_axi_awready <= 1'b0;
+                s_axi_wready  <= 1'b0;
+                s_axi_bvalid  <= 1'b0;
+            end
+        end
+    end
+
+    // --- Logic Kênh Đọc (SPI FSM) ---
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state <= IDLE; s_axi_arready <= 1'b1; s_axi_rvalid <= 1'b0;
+            spi_cs_n <= 1'b1; spi_sck <= 1'b0; sck_en <= 1'b0;
         end else begin
             case (state)
                 IDLE: begin
-                    spi_cs_n <= 1'b1;
-                    spi_sck  <= 1'b0;
-                    if (rvalid && rready) begin
-                        rvalid <= 1'b0;
-                        rlast  <= 1'b0;
-                    end
-                    if (arvalid && arready) begin
-                        arready    <= 1'b0;
-                        latched_id <= arid; // Lưu lại ID để trả về chính xác
-                        // Lệnh 0x03 (Normal Read) + 24-bit Address vật lý
-                        shift_reg[63:56] <= 8'h03;
-                        shift_reg[55:32] <= araddr[23:0];
-                        shift_reg[31:0]  <= 32'h00000000;
-                        bit_cnt          <= 7'd63;
-                        state            <= SETUP;
+                    spi_cs_n <= 1'b1; spi_sck <= 1'b0;
+                    if (s_axi_rvalid && s_axi_rready) s_axi_rvalid <= 1'b0;
+                    if (s_axi_arvalid && s_axi_arready) begin
+                        s_axi_arready <= 1'b0;
+                        shift_reg <= {8'h03, s_axi_araddr[23:0], 32'h0};
+                        bit_cnt   <= 7'd63;
+                        state     <= SETUP;
                     end
                 end
-
                 SETUP: begin
                     spi_cs_n <= 1'b0;
-                    sck_en   <= 1'b0;
                     state    <= SHIFT;
                 end
-
                 SHIFT: begin
-                    if (sck_en == 1'b0) begin
-                        spi_sck  <= 1'b0;
-                        spi_mosi <= shift_reg[bit_cnt];
-                        sck_en   <= 1'b1;
+                    if (!sck_en) begin
+                        spi_sck <= 1'b0; sck_en <= 1'b1;
                     end else begin
-                        spi_sck <= 1'b1;
-                        if (bit_cnt < 7'd32) begin 
-                            shift_reg[bit_cnt] <= spi_miso;
-                        end
-                        sck_en <= 1'b0;
-                        
-                        if (bit_cnt == 7'd0) begin
-                            state <= DONE;
-                        end else begin
-                            bit_cnt <= bit_cnt - 1'b1;
-                        end
+                        spi_sck <= 1'b1; sck_en <= 1'b0;
+                        if (bit_cnt < 32) shift_reg[bit_cnt] <= spi_miso;
+                        if (bit_cnt == 0) state <= DONE;
+                        else bit_cnt <= bit_cnt - 1;
                     end
                 end
-
                 DONE: begin
-                    spi_cs_n <= 1'b1;
-                    spi_sck  <= 1'b0;
-                    rid      <= latched_id; // Trả đúng ID yêu cầu
-                    rdata    <= shift_reg[31:0];
-                    rvalid   <= 1'b1;
-                    rlast    <= 1'b1; // Báo hiệu đã đọc xong 1 khối 32-bit
-                    
-                    if (rvalid && rready) begin
-                        rvalid  <= 1'b0;
-                        rlast   <= 1'b0;
-                        arready <= 1'b1;
-                        state   <= IDLE;
+                    spi_cs_n <= 1'b1; spi_sck <= 1'b0;
+                    s_axi_rdata <= shift_reg[31:0];
+                    s_axi_rvalid <= 1'b1;
+                    s_axi_rresp <= 2'b00;
+                    if (s_axi_rvalid && s_axi_rready) begin
+                        s_axi_rvalid <= 1'b0; s_axi_arready <= 1'b1;
+                        state <= IDLE;
                     end
                 end
             endcase
