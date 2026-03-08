@@ -6,7 +6,7 @@
 module icache_data_ram (
     input  wire        clk,
     input  wire [3:0]  index,
-    input  wire [1:0]  write_en, // [1] cho Way 2, [0] cho Way 1
+    input  wire [1:0]  write_en,
     input  wire [63:0] write_data,
     output wire [63:0] data1_out,
     output wire [63:0] data2_out
@@ -47,22 +47,33 @@ module icache_tag_ram (
 endmodule
 
 // =============================================================================
-// MAIN MODULE: Instruction Cache Controller (32-bit Address)
+// MAIN MODULE: Instruction Cache Controller (AXI4 Burst Master)
 // =============================================================================
 module instruction_cache (
     input  wire        clk,
     input  wire        rst_n,          
     input  wire        flush,
+    
+    // Interface CPU
     input  wire        cpu_read_req,
     input  wire [31:0] cpu_addr,     
-    input  wire [63:0] mem_read_data,
-    input  wire        mem_read_ready,       // BỔ SUNG: Tín hiệu báo Bus đã nhận request
-    input  wire        mem_read_valid,
-    output reg         mem_read_req,
-    output reg  [31:0] mem_addr,       
     output reg  [31:0] cpu_read_data,
     output reg         icache_hit,
-    output reg         icache_stall
+    output reg         icache_stall,
+    
+    // Interface AXI4 Full (Chỉ dùng kênh Read)
+    output reg  [31:0] m_axi_araddr,
+    output wire [7:0]  m_axi_arlen,
+    output wire [2:0]  m_axi_arsize,
+    output wire [1:0]  m_axi_arburst,
+    output reg         m_axi_arvalid,
+    input  wire        m_axi_arready,
+    
+    input  wire [31:0] m_axi_rdata,
+    input  wire [1:0]  m_axi_rresp,
+    input  wire        m_axi_rlast,
+    input  wire        m_axi_rvalid,
+    output reg         m_axi_rready
 );
 
     wire [24:0] tag         = cpu_addr[31:7];
@@ -71,24 +82,32 @@ module instruction_cache (
 
     wire [63:0] data1_out, data2_out;
     wire [24:0] tag1_out, tag2_out;
-    
+
     reg valid1 [0:15];
     reg valid2 [0:15];
     reg plru   [0:15];
     
-    parameter IDLE = 1'b0, MEM_READ = 1'b1;
-    reg state, next_state;
+    // Cấu hình Burst cố định: 2 nhịp (arlen = 1), mỗi nhịp 4 byte (arsize = 2), tăng dần (arburst = 1)
+    assign m_axi_arlen   = 8'd1; 
+    assign m_axi_arsize  = 3'b010; 
+    assign m_axi_arburst = 2'b01;  
 
-    reg [1:0] way_update;
+    // Các trạng thái FSM (Sử dụng AXI Burst)
+    localparam IDLE       = 3'd0;
+    localparam AR_REQ     = 3'd1;
+    localparam R_WAIT_1   = 3'd2;
+    localparam R_WAIT_2   = 3'd3;
+    localparam UPDATE_RAM = 3'd4;
     
-    // BỔ SUNG: Biến lưu trạng thái đã gửi Request thành công
-    reg req_sent; 
-
+    reg [2:0] state, next_state;
+    reg [1:0] way_update;
+    reg [63:0] fetch_buffer; // Đệm để ghép 2 nhịp 32-bit thành 64-bit
+    
     icache_data_ram DATA_RAM (
         .clk(clk), 
         .index(index), 
         .write_en(way_update), 
-        .write_data(mem_read_data),
+        .write_data(fetch_buffer),
         .data1_out(data1_out), 
         .data2_out(data2_out)
     );
@@ -102,14 +121,11 @@ module instruction_cache (
         .tag2_out(tag2_out)
     );
 
-    // -------------------------------------------------------------------------
-    // 2. Logic cập nhật Metadata (Valid bit & PLRU)
-    // -------------------------------------------------------------------------
     integer i;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= IDLE;
-            req_sent <= 1'b0;
+            fetch_buffer <= 64'b0;
             for (i=0; i<16; i=i+1) begin 
                 valid1[i] <= 1'b0;
                 valid2[i] <= 1'b0; 
@@ -117,22 +133,14 @@ module instruction_cache (
             end
         end else if (flush) begin
             state <= IDLE;
-            req_sent <= 1'b0;
         end else begin
             state <= next_state;
-
-            // BỔ SUNG: Quản lý cờ Handshake
-            if (state == IDLE) begin
-                req_sent <= 1'b0;
-            end else if (state == MEM_READ && mem_read_ready && mem_read_req) begin
-                req_sent <= 1'b1;
-            end
-
+            
+            // PLRU Update
             if (cpu_read_req && state == IDLE) begin
                 if (valid1[index] && tag1_out == tag) plru[index] <= 1'b1;
                 else if (valid2[index] && tag2_out == tag) plru[index] <= 1'b0;
-            end 
-            else if (way_update != 2'b00) begin
+            end else if (state == UPDATE_RAM) begin
                 if (way_update[0]) begin 
                     valid1[index] <= 1'b1;
                     plru[index]   <= 1'b1; 
@@ -141,20 +149,27 @@ module instruction_cache (
                     plru[index]   <= 1'b0; 
                 end
             end
+
+            // Capture Data từ Bus AXI
+            if (state == R_WAIT_1 && m_axi_rvalid && m_axi_rready) begin
+                fetch_buffer[31:0] <= m_axi_rdata; // Nhịp 1: 32 bit thấp
+            end else if (state == R_WAIT_2 && m_axi_rvalid && m_axi_rready) begin
+                fetch_buffer[63:32] <= m_axi_rdata; // Nhịp 2: 32 bit cao
+            end
         end
     end
 
-    // -------------------------------------------------------------------------
-    // 3. Logic tổ hợp (FSM & Output)
-    // -------------------------------------------------------------------------
+    // Logic tổ hợp FSM
     always @(*) begin
         next_state    = state;
         icache_hit    = 1'b0;
         icache_stall  = 1'b0; 
-        mem_read_req  = 1'b0; 
-        cpu_read_data = 32'b0; 
-        mem_addr      = 32'b0;
+        cpu_read_data = 32'b0;
         way_update    = 2'b00;
+        
+        m_axi_arvalid = 1'b0;
+        m_axi_araddr  = {tag, index, 3'b000}; // Luôn căn lề 8 byte
+        m_axi_rready  = 1'b0;
 
         if (flush) begin
             icache_stall = 1'b1;
@@ -170,30 +185,43 @@ module instruction_cache (
                             cpu_read_data = (word_offset == 1'b0) ? data2_out[31:0] : data2_out[63:32];
                         end else begin
                             icache_stall  = 1'b1;
-                            mem_read_req  = 1'b1;
-                            mem_addr      = {tag, index, 3'b000};
-                            next_state    = MEM_READ;
+                            next_state    = AR_REQ;
                         end
                     end
                 end
 
-                MEM_READ: begin
-                    icache_stall = 1'b1;
-                    mem_read_req = !req_sent; // BỔ SUNG: Chỉ giữ req khi bus chưa ready
-                    mem_addr     = {tag, index, 3'b000};
-                    
-                    if (mem_read_valid) begin
-                        icache_stall = 1'b0;
-                        mem_read_req = 1'b0; 
-                        next_state   = IDLE;
-                        
-                        cpu_read_data = (word_offset == 1'b0) ? mem_read_data[31:0] : mem_read_data[63:32];
-                        
-                        if (!valid1[index])      way_update[0] = 1'b1;
-                        else if (!valid2[index]) way_update[1] = 1'b1;
-                        else if (plru[index] == 1'b0) way_update[0] = 1'b1;
-                        else                     way_update[1] = 1'b1;
+                AR_REQ: begin
+                    icache_stall  = 1'b1;
+                    m_axi_arvalid = 1'b1;
+                    m_axi_araddr  = {tag, index, 3'b000};
+                    if (m_axi_arready) begin
+                        next_state = R_WAIT_1;
                     end
+                end
+
+                R_WAIT_1: begin
+                    icache_stall = 1'b1;
+                    m_axi_rready = 1'b1;
+                    if (m_axi_rvalid) begin
+                        next_state = R_WAIT_2;
+                    end
+                end
+
+                R_WAIT_2: begin
+                    icache_stall = 1'b1;
+                    m_axi_rready = 1'b1;
+                    if (m_axi_rvalid && m_axi_rlast) begin
+                        next_state = UPDATE_RAM;
+                    end
+                end
+                
+                UPDATE_RAM: begin
+                    icache_stall = 1'b1;
+                    if (!valid1[index])      way_update[0] = 1'b1;
+                    else if (!valid2[index]) way_update[1] = 1'b1;
+                    else if (plru[index] == 1'b0) way_update[0] = 1'b1;
+                    else                     way_update[1] = 1'b1;
+                    next_state = IDLE;
                 end
             endcase
         end

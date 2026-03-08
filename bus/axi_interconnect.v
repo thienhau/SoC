@@ -1,16 +1,5 @@
 `timescale 1ns / 1ps
 
-/**
- * MODULE: axi_interconnect
- * DESCRIPTION: Bộ kết nối trung tâm AXI4-Lite (Multi-Master, Multi-Slave).
- * Quản lý định tuyến và trọng tài giữa 3 Master và 4 Slave.
- * * MAP ĐỊA CHỈ (ADDRESS MAP):
- * - S0: BOOT ROM    (0x0000_1000 - 0x0000_4FFF) -> Chứa Bootloader mồi
- * - S1: SYSTEM RAM  (0x8000_0000 - 0x8000_FFFF) -> Thực thi chương trình chính
- * - S2: APB BRIDGE  (0x4000_0000 - 0x4FFF_FFFF) -> Điều khiển ngoại vi
- * - S3: SPI FLASH   (0x2000_0000 - 0x2FFF_FFFF) -> Nơi chứa Firmware chính
- */
-
 module axi_interconnect #(
     parameter ADDR_WIDTH = 32,
     parameter DATA_WIDTH = 32
@@ -18,20 +7,20 @@ module axi_interconnect #(
     input wire clk,
     input wire rst_n,
 
-    // =========================================================================
-    // KÊNH MASTER 0 (M0): I-CACHE (Instruction Fetch - Chỉ Đọc)
-    // =========================================================================
+    // KÊNH MASTER 0 (M0): I-CACHE (Hỗ trợ Burst)
     input  wire [ADDR_WIDTH-1:0]  m0_araddr,
+    input  wire [7:0]             m0_arlen,
+    input  wire [2:0]             m0_arsize,
+    input  wire [1:0]             m0_arburst,
     input  wire                   m0_arvalid,
     output reg                    m0_arready,
     output reg  [DATA_WIDTH-1:0]  m0_rdata,
     output reg  [1:0]             m0_rresp,
+    output reg                    m0_rlast,
     output reg                    m0_rvalid,
     input  wire                   m0_rready,
 
-    // =========================================================================
-    // KÊNH MASTER 1 (M1): D-CACHE (Data Access - Đọc/Ghi)
-    // =========================================================================
+    // KÊNH MASTER 1 (M1): D-CACHE (Lite)
     input  wire [ADDR_WIDTH-1:0]  m1_awaddr,
     input  wire                   m1_awvalid,
     output reg                    m1_awready,
@@ -50,108 +39,63 @@ module axi_interconnect #(
     output reg                    m1_rvalid,
     input  wire                   m1_rready,
 
-    // =========================================================================
-    // KÊNH MASTER 2 (M2): DEBUG MODULE (JTAG Debug - Đọc/Ghi)
-    // =========================================================================
-    input  wire [ADDR_WIDTH-1:0]  m2_awaddr,
-    input  wire                   m2_awvalid,
-    output reg                    m2_awready,
-    input  wire [DATA_WIDTH-1:0]  m2_wdata,
-    input  wire [3:0]             m2_wstrb,
-    input  wire                   m2_wvalid,
-    output reg                    m2_wready,
-    output reg  [1:0]             m2_bresp,
-    output reg                    m2_bvalid,
-    input  wire                   m2_bready,
-    input  wire [ADDR_WIDTH-1:0]  m2_araddr,
-    input  wire                   m2_arvalid,
-    output reg                    m2_arready,
-    output reg  [DATA_WIDTH-1:0]  m2_rdata,
-    output reg  [1:0]             m2_rresp,
-    output reg                    m2_rvalid,
-    input  wire                   m2_rready,
+    // KÊNH MASTER 2 (M2): DEBUG MODULE (Lite)
+    // (Bỏ qua khai báo các tín hiệu ghi của M2 ở đây cho đỡ dài, giống hệt file gốc của bạn)
+    input  wire [ADDR_WIDTH-1:0]  m2_awaddr, input wire m2_awvalid, output reg m2_awready,
+    input  wire [DATA_WIDTH-1:0]  m2_wdata, input wire [3:0] m2_wstrb, input wire m2_wvalid, output reg m2_wready,
+    output reg  [1:0] m2_bresp, output reg m2_bvalid, input wire m2_bready,
+    input  wire [ADDR_WIDTH-1:0]  m2_araddr, input wire m2_arvalid, output reg m2_arready,
+    output reg  [DATA_WIDTH-1:0]  m2_rdata, output reg [1:0] m2_rresp, output reg m2_rvalid, input wire m2_rready,
 
-    // =========================================================================
-    // KÊNH SLAVE 0 (S0): BOOT ROM
-    // =========================================================================
-    output reg  [ADDR_WIDTH-1:0]  s0_araddr,
-    output reg                    s0_arvalid,
-    input  wire                   s0_arready,
-    input  wire [DATA_WIDTH-1:0]  s0_rdata,
-    input  wire [1:0]             s0_rresp,
-    input  wire                   s0_rvalid,
-    output reg                    s0_rready,
+    // KÊNH SLAVE 0 (S0): ROM (Lite)
+    output reg  [ADDR_WIDTH-1:0]  s0_araddr, output reg s0_arvalid, input wire s0_arready,
+    input  wire [DATA_WIDTH-1:0]  s0_rdata, input wire [1:0] s0_rresp, input wire s0_rvalid, output reg s0_rready,
 
-    // =========================================================================
-    // KÊNH SLAVE 1 (S1): SYSTEM RAM
-    // =========================================================================
-    output reg  [ADDR_WIDTH-1:0]  s1_awaddr,
-    output reg                    s1_awvalid,
-    input  wire                   s1_awready,
-    output reg  [DATA_WIDTH-1:0]  s1_wdata,
-    output reg  [3:0]             s1_wstrb,
-    output reg                    s1_wvalid,
-    input  wire                   s1_wready,
-    input  wire [1:0]             s1_bresp,
-    input  wire                   s1_bvalid,
-    output reg                    s1_bready,
+    // KÊNH SLAVE 1 (S1): RAM (Hỗ trợ Burst)
+    output reg  [ADDR_WIDTH-1:0]  s1_awaddr, output reg s1_awvalid, input wire s1_awready,
+    output reg  [DATA_WIDTH-1:0]  s1_wdata, output reg [3:0] s1_wstrb, output reg s1_wvalid, input wire s1_wready,
+    input  wire [1:0] s1_bresp, input wire s1_bvalid, output reg s1_bready,
+    
     output reg  [ADDR_WIDTH-1:0]  s1_araddr,
+    output reg  [7:0]             s1_arlen,
+    output reg  [2:0]             s1_arsize,
+    output reg  [1:0]             s1_arburst,
     output reg                    s1_arvalid,
     input  wire                   s1_arready,
     input  wire [DATA_WIDTH-1:0]  s1_rdata,
     input  wire [1:0]             s1_rresp,
+    input  wire                   s1_rlast,
     input  wire                   s1_rvalid,
     output reg                    s1_rready,
 
-    // =========================================================================
-    // KÊNH SLAVE 2 (S2): APB BRIDGE (Ngoại vi)
-    // =========================================================================
-    output reg  [ADDR_WIDTH-1:0]  s2_awaddr,
-    output reg                    s2_awvalid,
-    input  wire                   s2_awready,
-    output reg  [DATA_WIDTH-1:0]  s2_wdata,
-    output reg  [3:0]             s2_wstrb,
-    output reg                    s2_wvalid,
-    input  wire                   s2_wready,
-    input  wire [1:0]             s2_bresp,
-    input  wire                   s2_bvalid,
-    output reg                    s2_bready,
-    output reg  [ADDR_WIDTH-1:0]  s2_araddr,
-    output reg                    s2_arvalid,
-    input  wire                   s2_arready,
-    input  wire [DATA_WIDTH-1:0]  s2_rdata,
-    input  wire [1:0]             s2_rresp,
-    input  wire                   s2_rvalid,
-    output reg                    s2_rready,
-
-    // =========================================================================
-    // KÊNH SLAVE 3 (S3): AXI SPI FLASH
-    // =========================================================================
-    output reg  [ADDR_WIDTH-1:0]  s3_araddr,
-    output reg                    s3_arvalid,
-    input  wire                   s3_arready,
-    input  wire [DATA_WIDTH-1:0]  s3_rdata,
-    input  wire [1:0]             s3_rresp,
-    input  wire                   s3_rvalid,
-    output reg                    s3_rready
+    // KÊNH SLAVE 2 & 3 (S2, S3) (Lite)
+    // (Giống hệt file gốc của bạn, rút gọn khai báo để tập trung vào logic mới)
+    output reg  [ADDR_WIDTH-1:0]  s2_awaddr, output reg s2_awvalid, input wire s2_awready,
+    output reg  [DATA_WIDTH-1:0]  s2_wdata, output reg [3:0] s2_wstrb, output reg s2_wvalid, input wire s2_wready,
+    input  wire [1:0] s2_bresp, input wire s2_bvalid, output reg s2_bready,
+    output reg  [ADDR_WIDTH-1:0]  s2_araddr, output reg s2_arvalid, input wire s2_arready,
+    input  wire [DATA_WIDTH-1:0]  s2_rdata, input wire [1:0] s2_rresp, input wire s2_rvalid, output reg s2_rready,
+    
+    output reg  [ADDR_WIDTH-1:0]  s3_araddr, output reg s3_arvalid, input wire s3_arready,
+    input  wire [DATA_WIDTH-1:0]  s3_rdata, input wire [1:0] s3_rresp, input wire s3_rvalid, output reg s3_rready
 );
 
     // =========================================================================
-    // HÀM GIẢI MÃ ĐỊA CHỈ (ADDRESS DECODING LATCHED)
+    // HÀM GIẢI MÃ ĐỊA CHỈ
     // =========================================================================
     function [2:0] decode_addr;
         input [ADDR_WIDTH-1:0] addr;
         begin
-            if      (addr >= 32'h0000_1000 && addr <= 32'h0000_4FFF) decode_addr = 3'd0; // S0
-            else if (addr >= 32'h8000_0000 && addr <= 32'h8000_FFFF) decode_addr = 3'd1; // S1
-            else if (addr >= 32'h4000_0000 && addr <= 32'h4FFF_FFFF) decode_addr = 3'd2; // S2
-            else if (addr >= 32'h2000_0000 && addr <= 32'h2FFF_FFFF) decode_addr = 3'd3; // S3
-            else                                                     decode_addr = 3'd4; // ERROR
+            if      (addr >= 32'h0000_1000 && addr <= 32'h0000_4FFF) decode_addr = 3'd0;
+            else if (addr >= 32'h8000_0000 && addr <= 32'h8000_FFFF) decode_addr = 3'd1;
+            else if (addr >= 32'h4000_0000 && addr <= 32'h4FFF_FFFF) decode_addr = 3'd2;
+            else if (addr >= 32'h2000_0000 && addr <= 32'h2FFF_FFFF) decode_addr = 3'd3;
+            else                                                     decode_addr = 3'd4;
         end
     endfunction
 
     // =========================================================================
-    // TRỌNG TÀI KÊNH ĐỌC (READ ARBITRATION FSM)
+    // TRỌNG TÀI KÊNH ĐỌC (READ ARBITRATION FSM - CÓ BURST)
     // =========================================================================
     localparam R_IDLE = 2'd0;
     localparam R_ADDR = 2'd1;
@@ -160,7 +104,11 @@ module axi_interconnect #(
     reg [1:0] r_state;
     reg [1:0] r_grant; 
     reg [1:0] r_token;
-    reg [2:0] r_target; // Chốt Slave ID để Data phase không bị tuột tín hiệu
+    reg [2:0] r_target;
+    
+    // Tín hiệu nội bộ xác định khi nào kết thúc truyền dữ liệu
+    wire current_rlast;
+    assign current_rlast = (r_target == 3'd1) ? s1_rlast : 1'b1; // Slave 1 có rlast thật, các slave khác coi như luôn rlast = 1
 
     wire [2:0] r_req = {m2_arvalid, m1_arvalid, m0_arvalid};
 
@@ -198,9 +146,10 @@ module axi_interconnect #(
                     end
                 end
                 R_DATA: begin
-                    if ((r_grant == 2'd0 && m0_rvalid && m0_rready) ||
-                        (r_grant == 2'd1 && m1_rvalid && m1_rready) ||
-                        (r_grant == 2'd2 && m2_rvalid && m2_rready)) begin
+                    // ĐỢI current_rlast ĐỂ KẾT THÚC BURST
+                    if ((r_grant == 2'd0 && m0_rvalid && m0_rready && current_rlast) ||
+                        (r_grant == 2'd1 && m1_rvalid && m1_rready && current_rlast) ||
+                        (r_grant == 2'd2 && m2_rvalid && m2_rready && current_rlast)) begin
                         r_state <= R_IDLE;
                     end
                 end
@@ -210,18 +159,18 @@ module axi_interconnect #(
 
     // Định tuyến Kênh Đọc Combinational
     always @(*) begin
-        m0_arready = 1'b0; m0_rvalid = 1'b0; m0_rdata = 32'h0; m0_rresp = 2'b00;
+        m0_arready = 1'b0; m0_rvalid = 1'b0; m0_rdata = 32'h0; m0_rresp = 2'b00; m0_rlast = 1'b0;
         m1_arready = 1'b0; m1_rvalid = 1'b0; m1_rdata = 32'h0; m1_rresp = 2'b00;
         m2_arready = 1'b0; m2_rvalid = 1'b0; m2_rdata = 32'h0; m2_rresp = 2'b00;
         
         s0_arvalid = 1'b0; s0_araddr = 32'h0; s0_rready = 1'b0;
         s1_arvalid = 1'b0; s1_araddr = 32'h0; s1_rready = 1'b0;
+        s1_arlen = 8'd0; s1_arsize = 3'd0; s1_arburst = 2'd0;
         s2_arvalid = 1'b0; s2_araddr = 32'h0; s2_rready = 1'b0;
         s3_arvalid = 1'b0; s3_araddr = 32'h0; s3_rready = 1'b0;
 
         if (r_state == R_ADDR) begin
             if (r_target == 3'd4) begin
-                // Báo lỗi bằng cách Dummy ACK AddressPhase
                 if (r_grant == 2'd0) m0_arready = 1'b1;
                 if (r_grant == 2'd1) m1_arready = 1'b1;
                 if (r_grant == 2'd2) m2_arready = 1'b1;
@@ -235,8 +184,13 @@ module axi_interconnect #(
                         if (r_grant == 2'd2) m2_arready = s0_arready;
                     end
                     3'd1: begin
-                        s1_araddr = (r_grant == 2'd0) ? m0_araddr : (r_grant == 2'd1) ? m1_araddr : m2_araddr;
+                        s1_araddr  = (r_grant == 2'd0) ? m0_araddr : (r_grant == 2'd1) ? m1_araddr : m2_araddr;
+                        // Map tín hiệu Burst từ M0 sang S1. Nếu M1, M2 thì set burst = 0 (1 beat)
+                        s1_arlen   = (r_grant == 2'd0) ? m0_arlen   : 8'd0;
+                        s1_arsize  = (r_grant == 2'd0) ? m0_arsize  : 3'd2;
+                        s1_arburst = (r_grant == 2'd0) ? m0_arburst : 2'd0;
                         s1_arvalid = (r_grant == 2'd0) ? m0_arvalid : (r_grant == 2'd1) ? m1_arvalid : m2_arvalid;
+                        
                         if (r_grant == 2'd0) m0_arready = s1_arready;
                         if (r_grant == 2'd1) m1_arready = s1_arready;
                         if (r_grant == 2'd2) m2_arready = s1_arready;
@@ -258,30 +212,29 @@ module axi_interconnect #(
                 endcase
             end
         end else if (r_state == R_DATA) begin
-            // Chỉ định tuyến Data/Response (không nhồi địa chỉ nữa)
             if (r_target == 3'd4) begin
-                if (r_grant == 2'd0) begin m0_rvalid = 1'b1; m0_rresp = 2'b11; end
+                if (r_grant == 2'd0) begin m0_rvalid = 1'b1; m0_rresp = 2'b11; m0_rlast = 1'b1; end
                 if (r_grant == 2'd1) begin m1_rvalid = 1'b1; m1_rresp = 2'b11; end
                 if (r_grant == 2'd2) begin m2_rvalid = 1'b1; m2_rresp = 2'b11; end
             end else begin
                 case (r_target)
                     3'd0: begin
-                        if (r_grant == 2'd0) begin m0_rvalid = s0_rvalid; m0_rdata = s0_rdata; m0_rresp = s0_rresp; s0_rready = m0_rready; end
+                        if (r_grant == 2'd0) begin m0_rvalid = s0_rvalid; m0_rdata = s0_rdata; m0_rresp = s0_rresp; m0_rlast = 1'b1; s0_rready = m0_rready; end
                         if (r_grant == 2'd1) begin m1_rvalid = s0_rvalid; m1_rdata = s0_rdata; m1_rresp = s0_rresp; s0_rready = m1_rready; end
                         if (r_grant == 2'd2) begin m2_rvalid = s0_rvalid; m2_rdata = s0_rdata; m2_rresp = s0_rresp; s0_rready = m2_rready; end
                     end
-                    3'd1: begin
-                        if (r_grant == 2'd0) begin m0_rvalid = s1_rvalid; m0_rdata = s1_rdata; m0_rresp = s1_rresp; s1_rready = m0_rready; end
+                    3'd1: begin // TRUYỀN RLAST TỪ S1 VỀ M0
+                        if (r_grant == 2'd0) begin m0_rvalid = s1_rvalid; m0_rdata = s1_rdata; m0_rresp = s1_rresp; m0_rlast = s1_rlast; s1_rready = m0_rready; end
                         if (r_grant == 2'd1) begin m1_rvalid = s1_rvalid; m1_rdata = s1_rdata; m1_rresp = s1_rresp; s1_rready = m1_rready; end
                         if (r_grant == 2'd2) begin m2_rvalid = s1_rvalid; m2_rdata = s1_rdata; m2_rresp = s1_rresp; s1_rready = m2_rready; end
                     end
                     3'd2: begin
-                        if (r_grant == 2'd0) begin m0_rvalid = s2_rvalid; m0_rdata = s2_rdata; m0_rresp = s2_rresp; s2_rready = m0_rready; end
+                        if (r_grant == 2'd0) begin m0_rvalid = s2_rvalid; m0_rdata = s2_rdata; m0_rresp = s2_rresp; m0_rlast = 1'b1; s2_rready = m0_rready; end
                         if (r_grant == 2'd1) begin m1_rvalid = s2_rvalid; m1_rdata = s2_rdata; m1_rresp = s2_rresp; s2_rready = m1_rready; end
                         if (r_grant == 2'd2) begin m2_rvalid = s2_rvalid; m2_rdata = s2_rdata; m2_rresp = s2_rresp; s2_rready = m2_rready; end
                     end
                     3'd3: begin
-                        if (r_grant == 2'd0) begin m0_rvalid = s3_rvalid; m0_rdata = s3_rdata; m0_rresp = s3_rresp; s3_rready = m0_rready; end
+                        if (r_grant == 2'd0) begin m0_rvalid = s3_rvalid; m0_rdata = s3_rdata; m0_rresp = s3_rresp; m0_rlast = 1'b1; s3_rready = m0_rready; end
                         if (r_grant == 2'd1) begin m1_rvalid = s3_rvalid; m1_rdata = s3_rdata; m1_rresp = s3_rresp; s3_rready = m1_rready; end
                         if (r_grant == 2'd2) begin m2_rvalid = s3_rvalid; m2_rdata = s3_rdata; m2_rresp = s3_rresp; s3_rready = m2_rready; end
                     end
