@@ -40,6 +40,9 @@ module axi4l_ram_slave #(
     input  wire                   s_axi_rready
 );
 
+    reg [ADDR_WIDTH-1:0] write_addr_latch;
+    reg [ADDR_WIDTH-1:0] read_addr_latch;
+
     // =========================================================================
     // KHỐI 1: TÁCH BIỆT BRAM VẬT LÝ (TUYỆT ĐỐI KHÔNG CÓ RESET Ở ĐÂY)
     // =========================================================================
@@ -76,7 +79,6 @@ module axi4l_ram_slave #(
     
     // --- BIẾN CHO KÊNH GHI ---
     reg aw_en;
-    reg [ADDR_WIDTH-1:0] write_addr_latch;
     
     assign ram_we = (s_axi_wready && s_axi_wvalid && s_axi_awready && s_axi_awvalid) ? s_axi_wstrb : 4'b0000;
 
@@ -110,7 +112,6 @@ module axi4l_ram_slave #(
     end
 
     // --- BIẾN CHO KÊNH ĐỌC (PIPELINED BURST) ---
-    reg [ADDR_WIDTH-1:0] read_addr_latch;
     reg [7:0]            burst_len;
     reg [7:0]            fetch_cnt; // Đếm số từ đã đẩy vào BRAM pipeline
     reg [7:0]            send_cnt;  // Đếm số từ Master đã nhận

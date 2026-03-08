@@ -132,15 +132,18 @@ module apb_interconnect #(
     assign s6_paddr = m_paddr; assign s6_penable = m_penable; assign s6_pwrite = m_pwrite; assign s6_pwdata = m_pwdata; assign s6_pstrb = m_pstrb;
     assign s7_paddr = m_paddr; assign s7_penable = m_penable; assign s7_pwrite = m_pwrite; assign s7_pwdata = m_pwdata; assign s7_pstrb = m_pstrb;
 
-    // Giải mã địa chỉ bằng bit [15:12]
-    wire dec_s0 = (m_paddr[15:12] == 4'h0);
-    wire dec_s1 = (m_paddr[15:12] == 4'h1);
-    wire dec_s2 = (m_paddr[15:12] == 4'h2);
-    wire dec_s3 = (m_paddr[15:12] == 4'h3);
-    wire dec_s4 = (m_paddr[15:12] == 4'h4);
-    wire dec_s5 = (m_paddr[15:12] == 4'h5);
-    wire dec_s6 = (m_paddr[15:12] == 4'h6);
-    wire dec_s7 = (m_paddr[15:12] == 4'h7);
+    // Kiểm tra Base Address (0x4000_0000 đến 0x4000_FFFF)
+    wire valid_base = (m_paddr[31:16] == 16'h4000);
+
+    // Giải mã địa chỉ bằng bit [15:12] VÀ phải đúng Base Address
+    wire dec_s0 = valid_base && (m_paddr[15:12] == 4'h0);
+    wire dec_s1 = valid_base && (m_paddr[15:12] == 4'h1);
+    wire dec_s2 = valid_base && (m_paddr[15:12] == 4'h2);
+    wire dec_s3 = valid_base && (m_paddr[15:12] == 4'h3);
+    wire dec_s4 = valid_base && (m_paddr[15:12] == 4'h4);
+    wire dec_s5 = valid_base && (m_paddr[15:12] == 4'h5);
+    wire dec_s6 = valid_base && (m_paddr[15:12] == 4'h6);
+    wire dec_s7 = valid_base && (m_paddr[15:12] == 4'h7);
 
     // Kích hoạt PSEL tương ứng
     assign s0_psel = m_psel && dec_s0;
