@@ -1,12 +1,12 @@
 //==================================================================================================
 // File: fpu_unit.v
 // Description: Fully parameterized iterative IEEE-754 FPU
-// Fixed: Added FLW/FSW support and missing SQRT restoring algorithm logic.
+// Fixed: Final MUL exponent bias and CVT Non-blocking assignment issue.
 //==================================================================================================
 `timescale 1ns / 1ps
 
 module fpu_unit #(
-    parameter BITS_PER_CYCLE = 2 // Có thể đổi thành 1, 2 hoặc 4 để chia nhỏ data path
+    parameter BITS_PER_CYCLE = 2 
 )(
     input  wire        clk,
     input  wire        reset_n,
@@ -19,9 +19,7 @@ module fpu_unit #(
     output reg         fpu_done
 );
 
-    //==============================================================================================
     // Local Parameters - Opcodes
-    //==============================================================================================
     localparam FOP_ADD      = 5'b00000;
     localparam FOP_SUB      = 5'b00001;
     localparam FOP_MUL      = 5'b00010;
@@ -43,6 +41,7 @@ module fpu_unit #(
     localparam [31:0] POS_ZERO  = 32'h00000000;
     localparam [31:0] NEG_ZERO  = 32'h80000000;
     localparam [31:0] QNAN      = 32'h7FC00000;
+    localparam [31:0] POS_INF   = 32'h7F800000;
 
     // FSM States
     localparam STATE_IDLE      = 4'd0;
@@ -55,9 +54,7 @@ module fpu_unit #(
     localparam STATE_PACK      = 4'd7;
     localparam STATE_DONE      = 4'd8;
 
-    //==============================================================================================
-    // Module-Level Variables & Wires (Tuân thủ Verilog-2001)
-    //==============================================================================================
+    // Module-Level Variables
     reg [3:0]  state;
     reg        sign_a, sign_b, sign_res;
     reg [8:0]  exp_a, exp_b, exp_res; 
@@ -65,30 +62,25 @@ module fpu_unit #(
     reg [4:0]  op_reg;
     reg [6:0]  iteration_count;
 
-    // Biến phụ trợ cho vòng lặp tổ hợp (Combinational variables)
     integer    i;
-    integer    shift_amt;
     reg [49:0] temp_mant_res;
     reg [49:0] temp_mant_a;
     reg [49:0] temp_mant_b;
     reg [6:0]  temp_count;
     reg [8:0]  temp_exp_res;
-    reg [51:0] next_rem; // Dùng riêng cho khâu lặp SQRT
-    reg [51:0] test_val; // Dùng riêng cho khâu lặp SQRT
+    reg [51:0] next_rem; 
+    reg [51:0] test_val; 
 
-    // Các cờ kiểm tra toán hạng
     wire a_is_zero = (operand_a[30:23] == 8'd0) && (operand_a[22:0] == 23'd0);
     wire b_is_zero = (operand_b[30:23] == 8'd0) && (operand_b[22:0] == 23'd0);
     wire a_is_nan  = (operand_a[30:23] == 8'hFF) && (operand_a[22:0] != 23'd0);
     wire b_is_nan  = (operand_b[30:23] == 8'hFF) && (operand_b[22:0] != 23'd0);
 
-    // Tính toán Exponent sẵn cho lệnh SQRT để tránh lỗi tràn số signed/unsigned
     wire signed [10:0] s_true_exp     = $signed({3'b0, operand_a[30:23]}) - 11'sd127;
     wire signed [10:0] s_true_exp_odd = s_true_exp - 11'sd1;
     wire [8:0] sqrt_exp_even = $unsigned((s_true_exp >>> 1)) + 9'd127;
     wire [8:0] sqrt_exp_odd  = $unsigned((s_true_exp_odd >>> 1)) + 9'd127;
 
-    // Tín hiệu dành cho làm tròn (Rounding)
     wire w_lsb    = mant_res[25];
     wire w_guard  = mant_res[24];
     wire w_round  = mant_res[23];
@@ -96,9 +88,6 @@ module fpu_unit #(
 
     assign fpu_stall = (state != STATE_IDLE) || (fpu_start && state == STATE_IDLE);
 
-    //==============================================================================================
-    // Main Sequential Block
-    //==============================================================================================
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             state           <= STATE_IDLE;
@@ -137,7 +126,8 @@ module fpu_unit #(
                     
                     mant_res <= 50'd0;
                     
-                    if (a_is_nan || b_is_nan) begin
+                    if ( (a_is_nan && op_reg != FOP_CVT_S_W && op_reg != FOP_CVT_S_WU && op_reg != FOP_MV_W_X) || 
+                         (b_is_nan && op_reg != FOP_CVT_S_W && op_reg != FOP_CVT_S_WU && op_reg != FOP_MV_W_X && op_reg != FOP_CVT_W_S && op_reg != FOP_CVT_WU_S && op_reg != FOP_MV_X_W && op_reg != FOP_SQRT) ) begin
                         result <= QNAN;
                         state  <= STATE_DONE;
                     end else begin
@@ -147,21 +137,20 @@ module fpu_unit #(
                             end
                             FOP_SQRT: begin
                                 if (operand_a[31] && !a_is_zero) begin
-                                    result <= QNAN; // Căn của số âm = NaN
+                                    result <= QNAN; 
                                     state  <= STATE_DONE;
                                 end else if (a_is_zero) begin
-                                    result <= operand_a; // 0 hoặc -0
+                                    result <= operand_a; 
                                     state  <= STATE_DONE;
                                 end else begin
-                                    // Kiểm tra số mũ chẵn/lẻ (bit LSB của exponent là operand_a[23])
                                     if (operand_a[23] == 1'b0) begin 
                                         mant_a  <= {2'b01, operand_a[22:0], 25'd0} << 1;
                                         exp_res <= sqrt_exp_odd;
                                     end else begin
                                         exp_res <= sqrt_exp_even;
                                     end
-                                    sign_res        <= 1'b0; // SQRT luôn dương
-                                    mant_b          <= 50'd0; // Sử dụng mant_b làm thanh ghi Remainder
+                                    sign_res        <= 1'b0; 
+                                    mant_b          <= 50'd0; 
                                     iteration_count <= 7'd26;
                                     state           <= STATE_ITERATE;
                                 end
@@ -180,12 +169,21 @@ module fpu_unit #(
                             FOP_ADD, FOP_SUB: begin
                                 state <= STATE_ALIGN;
                             end
-                            FOP_MUL, FOP_DIV: begin
-                                iteration_count <= 7'd26; 
+                            FOP_MUL: begin
+                                iteration_count <= 7'd24;
                                 state           <= STATE_ITERATE;
                             end
+                            FOP_DIV: begin
+                                if (b_is_zero) begin
+                                    result <= {sign_a ^ sign_b, 8'hFF, 23'd0}; 
+                                    state  <= STATE_DONE;
+                                end else begin
+                                    iteration_count <= 7'd26; 
+                                    state           <= STATE_ITERATE;
+                                end
+                            end
                             FOP_CVT_W_S, FOP_CVT_WU_S: begin
-                                iteration_count <= 7'd26; 
+                                iteration_count <= 7'd1; 
                                 state           <= STATE_ITERATE;
                             end
                             default: state <= STATE_DONE;
@@ -262,15 +260,22 @@ module fpu_unit #(
                                 end
 
                                 FOP_MUL: begin
-                                    if (temp_count == 26) begin
-                                        temp_exp_res  = exp_a + exp_b - 9'd127;
+                                    if (temp_count == 24) begin
+                                        // FIXED: Changed bias from 127 to 126 to account for fractional multiplication shift
+                                        temp_exp_res  = exp_a + exp_b - 9'd126;
                                         sign_res      <= sign_a ^ sign_b;
                                         temp_mant_res = 50'd0;
+                                        temp_mant_a   = {26'd0, mant_a[48:25]}; 
                                     end
+                                    
                                     if (temp_mant_b[25]) temp_mant_res = temp_mant_res + temp_mant_a; 
                                     temp_mant_a = temp_mant_a << 1;
                                     temp_mant_b = temp_mant_b >> 1;
                                     temp_count  = temp_count - 1;
+                                    
+                                    if (temp_count == 0) begin
+                                        temp_mant_res = temp_mant_res << 1; // Push MSB to bit 48
+                                    end
                                 end
 
                                 FOP_DIV: begin
@@ -286,16 +291,18 @@ module fpu_unit #(
                                     end
                                     temp_mant_a = temp_mant_a << 1;
                                     temp_count  = temp_count - 1;
+                                    
+                                    if (temp_count == 0) begin
+                                        temp_mant_res = temp_mant_res << 23; 
+                                    end
                                 end
                                 
                                 FOP_SQRT: begin
-                                    // Bóc 2 bit từ Radicand đẩy vào Remainder
                                     next_rem = {temp_mant_b[49:0], temp_mant_a[49:48]};
-                                    // Giá trị trừ (Test value) = (Root << 2) | 1
                                     test_val = {temp_mant_res[49:0], 2'b01};
                                     
                                     if (next_rem >= test_val) begin
-                                        temp_mant_b   = (next_rem - test_val); // Ép kiểu ngầm định về 50 bit
+                                        temp_mant_b   = (next_rem - test_val); 
                                         temp_mant_res = (temp_mant_res << 1) | 1'b1;
                                     end else begin
                                         temp_mant_b   = next_rem[49:0];
@@ -305,7 +312,6 @@ module fpu_unit #(
                                     temp_count  = temp_count - 1;
                                     
                                     if (temp_count == 0) begin
-                                        // Dịch kết quả Root 26-bit hiện tại vào đúng khung căn lề ở bit thứ 48
                                         temp_mant_res = temp_mant_res << 23; 
                                     end
                                 end
@@ -325,16 +331,15 @@ module fpu_unit #(
                                 FOP_CVT_W_S, FOP_CVT_WU_S: begin
                                     if (exp_a < 9'd127) begin 
                                         temp_mant_res = 50'd0;
-                                        temp_count    = 0;
                                     end else begin
-                                        shift_amt = 9'd150 - exp_a; 
-                                        if (shift_amt > 0 && shift_amt < 31) begin
-                                            temp_mant_res = temp_mant_a >> shift_amt;
-                                        end else if (shift_amt <= 0) begin
-                                            temp_mant_res = temp_mant_a << (-shift_amt);
+                                        // FIXED: Synthesizable shift logic
+                                        if (exp_a <= 9'd175) begin
+                                            temp_mant_res = temp_mant_a >> (9'd175 - exp_a);
+                                        end else begin
+                                            temp_mant_res = temp_mant_a << (exp_a - 9'd175);
                                         end
-                                        temp_count = 0;
                                     end
+                                    temp_count = 0;
                                 end
                                 
                                 default: temp_count = 0;
@@ -350,10 +355,11 @@ module fpu_unit #(
 
                     if (temp_count == 0) begin
                         if (op_reg == FOP_CVT_W_S || op_reg == FOP_CVT_WU_S) begin
+                            // FIXED: Use temp_mant_res directly because mant_res is not updated yet
                             if (op_reg == FOP_CVT_W_S && sign_a) begin
-                                result <= ~(mant_res[31:0]) + 1'b1; 
+                                result <= ~(temp_mant_res[31:0]) + 1'b1; 
                             end else begin
-                                result <= mant_res[31:0];
+                                result <= temp_mant_res[31:0];
                             end
                             state <= STATE_DONE;
                         end else begin
