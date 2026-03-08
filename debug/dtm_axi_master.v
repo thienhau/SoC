@@ -48,7 +48,7 @@ module dtm_axi_master #(
     localparam ST_W_RESP = 3'b010;
     localparam ST_R_ADDR = 3'b011;
     localparam ST_R_DATA = 3'b100;
-    localparam ST_ACK    = 3'b101; // Trạng thái giữ ACK đợi Req hạ xuống
+    localparam ST_ACK    = 3'b101;
 
     reg [2:0] state;
 
@@ -61,7 +61,7 @@ module dtm_axi_master #(
             
             m_axi_awvalid <= 1'b0; m_axi_wvalid  <= 1'b0; m_axi_bready  <= 1'b0;
             m_axi_arvalid <= 1'b0; m_axi_rready  <= 1'b0;
-            m_axi_awprot  <= 3'b010; // Privileged access
+            m_axi_awprot  <= 3'b010;
             m_axi_arprot  <= 3'b010;
         end else begin
             case (state)
@@ -73,7 +73,7 @@ module dtm_axi_master #(
                             m_axi_awaddr  <= i_addr;
                             m_axi_awvalid <= 1'b1;
                             m_axi_wdata   <= i_wdata;
-                            m_axi_wstrb   <= 4'b1111; // JTAG thường nạp Full-Word
+                            m_axi_wstrb   <= 4'b1111;
                             m_axi_wvalid  <= 1'b1;
                             m_axi_bready  <= 1'b1;
                         end else if (i_op == 2'd1) begin // READ
@@ -98,7 +98,7 @@ module dtm_axi_master #(
                     if (m_axi_bvalid && m_axi_bready) begin
                         m_axi_bready <= 1'b0;
                         o_resp       <= m_axi_bresp;
-                        o_ack        <= 1'b1; // Báo cho Debug Module là xong
+                        o_ack        <= 1'b1;
                         state        <= ST_ACK;
                     end
                 end
@@ -116,14 +116,13 @@ module dtm_axi_master #(
                         m_axi_rready <= 1'b0;
                         o_rdata      <= m_axi_rdata;
                         o_resp       <= m_axi_rresp;
-                        o_ack        <= 1'b1; // Báo xong
+                        o_ack        <= 1'b1;
                         state        <= ST_ACK;
                     end
                 end
                 
                 // --- KẾT THÚC HANDSHAKE ---
                 ST_ACK: begin
-                    // Bắt buộc đợi TCK domain hạ REQ xuống thì mới kết thúc (4-phase)
                     if (!i_req) begin
                         o_ack <= 1'b0;
                         state <= ST_IDLE;

@@ -9,7 +9,7 @@ module jtag_tap (
     output wire       tdo,
     
     // Interface to Debug Module (DMI)
-    output wire [4:0] o_ir,       // SỬA LỖI: Thêm port o_ir (5-bit) bị thiếu
+    output wire [4:0] o_ir,    
     output wire       o_shift_dr,
     output wire       o_capture_dr,
     output wire       o_update_dr,
@@ -46,8 +46,6 @@ module jtag_tap (
         case (state)
             TLR: next_state = tms ? TLR : RTI;
             RTI: next_state = tms ? SDS : RTI;
-            
-            // DR Branch
             SDS: next_state = tms ? SIS : CDR;
             CDR: next_state = tms ? E1D : SDR;
             SDR: next_state = tms ? E1D : SDR;
@@ -55,8 +53,6 @@ module jtag_tap (
             PDR: next_state = tms ? E2D : PDR;
             E2D: next_state = tms ? UDR : SDR;
             UDR: next_state = tms ? SDS : RTI;
-            
-            // IR Branch
             SIS: next_state = tms ? TLR : CIR;
             CIR: next_state = tms ? E1I : SIR;
             SIR: next_state = tms ? E1I : SIR;
@@ -64,7 +60,6 @@ module jtag_tap (
             PIR: next_state = tms ? E2I : PIR;
             E2I: next_state = tms ? UIR : SIR;
             UIR: next_state = tms ? SDS : RTI;
-            
             default: next_state = TLR;
         endcase
     end
@@ -80,7 +75,7 @@ module jtag_tap (
             if (state == TLR) begin
                 ir_reg <= IR_IDCODE;
             end else if (state == CIR) begin
-                ir_shift_reg <= 5'b00001; // Capture pattern
+                ir_shift_reg <= 5'b00001;
             end else if (state == SIR) begin
                 ir_shift_reg <= {tdi, ir_shift_reg[4:1]};
             end else if (state == UIR) begin
@@ -100,7 +95,7 @@ module jtag_tap (
     // -----------------------------------------------------
     // Outputs to Debug Module
     // -----------------------------------------------------
-    assign o_ir         = ir_reg;     // SỬA LỖI: Gán giá trị ir_reg cho o_ir
+    assign o_ir         = ir_reg;
     assign o_shift_dr   = (state == SDR);
     assign o_capture_dr = (state == CDR);
     assign o_update_dr  = (state == UDR);

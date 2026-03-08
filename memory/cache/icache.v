@@ -11,15 +11,12 @@ module icache_data_ram (
     output wire [63:0] data1_out,
     output wire [63:0] data2_out
 );
-    // Ép Vivado sử dụng LUTRAM
     (* ram_style = "distributed" *) reg [63:0] data1 [0:15];
     (* ram_style = "distributed" *) reg [63:0] data2 [0:15];
 
-    // Đọc bất đồng bộ (Asynchronous Read)
     assign data1_out = data1[index];
     assign data2_out = data2[index];
 
-    // Ghi đồng bộ (Synchronous Write)
     always @(posedge clk) begin
         if (write_en[0]) data1[index] <= write_data;
         if (write_en[1]) data2[index] <= write_data;
@@ -54,43 +51,39 @@ endmodule
 // =============================================================================
 module instruction_cache (
     input  wire        clk,
-    input  wire        rst_n,          // Sửa thành Reset mức thấp
+    input  wire        rst_n,          
     input  wire        flush,
     input  wire        cpu_read_req,
-    input  wire [31:0] cpu_addr,       // Sửa thành 32-bit
+    input  wire [31:0] cpu_addr,     
     input  wire [63:0] mem_read_data,
+    input  wire        mem_read_ready,       // BỔ SUNG: Tín hiệu báo Bus đã nhận request
     input  wire        mem_read_valid,
     output reg         mem_read_req,
-    output reg  [31:0] mem_addr,       // Sửa thành 32-bit
+    output reg  [31:0] mem_addr,       
     output reg  [31:0] cpu_read_data,
     output reg         icache_hit,
     output reg         icache_stall
 );
-    // Giải mã địa chỉ 32-bit cho I-Cache (Block 8 Bytes)
-    // Cấu trúc: [31:7] Tag (25 bit) | [6:3] Index (4 bit) | [2:0] Byte Offset
+
     wire [24:0] tag         = cpu_addr[31:7];
     wire [3:0]  index       = cpu_addr[6:3];
-    wire        word_offset = cpu_addr[2]; // 0: Nửa dưới (bits 31:0), 1: Nửa trên (bits 63:32)
+    wire        word_offset = cpu_addr[2];
 
-    // Tín hiệu kết nối với module con
     wire [63:0] data1_out, data2_out;
     wire [24:0] tag1_out, tag2_out;
     
-    // Metadata (Valid và PLRU) dùng Flip-Flops để Reset được
     reg valid1 [0:15];
     reg valid2 [0:15];
     reg plru   [0:15];
     
-    // FSM State
     parameter IDLE = 1'b0, MEM_READ = 1'b1;
     reg state, next_state;
 
-    // Tín hiệu điều khiển nội bộ
-    reg [1:0] way_update; // Bit [0] update Way 1, Bit [1] update Way 2
+    reg [1:0] way_update;
+    
+    // BỔ SUNG: Biến lưu trạng thái đã gửi Request thành công
+    reg req_sent; 
 
-    // -------------------------------------------------------------------------
-    // 1. Kết nối Module con
-    // -------------------------------------------------------------------------
     icache_data_ram DATA_RAM (
         .clk(clk), 
         .index(index), 
@@ -116,29 +109,36 @@ module instruction_cache (
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= IDLE;
+            req_sent <= 1'b0;
             for (i=0; i<16; i=i+1) begin 
-                valid1[i] <= 1'b0; 
+                valid1[i] <= 1'b0;
                 valid2[i] <= 1'b0; 
                 plru[i]   <= 1'b0; 
             end
         end else if (flush) begin
             state <= IDLE;
+            req_sent <= 1'b0;
         end else begin
             state <= next_state;
-            
-            // Cập nhật PLRU khi có Hit
+
+            // BỔ SUNG: Quản lý cờ Handshake
+            if (state == IDLE) begin
+                req_sent <= 1'b0;
+            end else if (state == MEM_READ && mem_read_ready && mem_read_req) begin
+                req_sent <= 1'b1;
+            end
+
             if (cpu_read_req && state == IDLE) begin
                 if (valid1[index] && tag1_out == tag) plru[index] <= 1'b1;
                 else if (valid2[index] && tag2_out == tag) plru[index] <= 1'b0;
             end 
-            // Cập nhật Valid và PLRU khi nạp dòng mới (Refill)
             else if (way_update != 2'b00) begin
                 if (way_update[0]) begin 
-                    valid1[index] <= 1'b1; 
-                    plru[index]   <= 1'b1; // Mới dùng Way 1 -> Victim tiếp theo ưu tiên Way 2 (0)
+                    valid1[index] <= 1'b1;
+                    plru[index]   <= 1'b1; 
                 end else if (way_update[1]) begin 
-                    valid2[index] <= 1'b1; 
-                    plru[index]   <= 1'b0; // Mới dùng Way 2 -> Victim tiếp theo ưu tiên Way 1 (1)
+                    valid2[index] <= 1'b1;
+                    plru[index]   <= 1'b0; 
                 end
             end
         end
@@ -148,13 +148,12 @@ module instruction_cache (
     // 3. Logic tổ hợp (FSM & Output)
     // -------------------------------------------------------------------------
     always @(*) begin
-        // Giá trị mặc định
         next_state    = state;
-        icache_hit    = 1'b0; 
+        icache_hit    = 1'b0;
         icache_stall  = 1'b0; 
         mem_read_req  = 1'b0; 
         cpu_read_data = 32'b0; 
-        mem_addr      = 32'b0; 
+        mem_addr      = 32'b0;
         way_update    = 2'b00;
 
         if (flush) begin
@@ -163,7 +162,6 @@ module instruction_cache (
             case (state)
                 IDLE: begin
                     if (cpu_read_req) begin
-                        // So sánh Tag
                         if (valid1[index] && tag1_out == tag) begin
                             icache_hit    = 1'b1;
                             cpu_read_data = (word_offset == 1'b0) ? data1_out[31:0] : data1_out[63:32];
@@ -171,10 +169,8 @@ module instruction_cache (
                             icache_hit    = 1'b1;
                             cpu_read_data = (word_offset == 1'b0) ? data2_out[31:0] : data2_out[63:32];
                         end else begin
-                            // Miss -> Chuyển sang đọc RAM
-                            icache_stall  = 1'b1; 
+                            icache_stall  = 1'b1;
                             mem_read_req  = 1'b1;
-                            // Địa chỉ gửi xuống RAM phải thẳng hàng 8 Bytes (64-bit)
                             mem_addr      = {tag, index, 3'b000};
                             next_state    = MEM_READ;
                         end
@@ -182,23 +178,21 @@ module instruction_cache (
                 end
 
                 MEM_READ: begin
-                    icache_stall = 1'b1; 
-                    mem_read_req = 1'b1;
+                    icache_stall = 1'b1;
+                    mem_read_req = !req_sent; // BỔ SUNG: Chỉ giữ req khi bus chưa ready
                     mem_addr     = {tag, index, 3'b000};
                     
                     if (mem_read_valid) begin
-                        icache_stall = 1'b0; 
+                        icache_stall = 1'b0;
                         mem_read_req = 1'b0; 
                         next_state   = IDLE;
                         
-                        // Forward data ngay lập tức cho CPU để giảm trễ
                         cpu_read_data = (word_offset == 1'b0) ? mem_read_data[31:0] : mem_read_data[63:32];
                         
-                        // Chọn Way để ghi đè (Replacement Policy)
-                        if (!valid1[index])      way_update[0] = 1'b1; // Way 1 trống
-                        else if (!valid2[index]) way_update[1] = 1'b1; // Way 2 trống
-                        else if (plru[index] == 1'b0) way_update[0] = 1'b1; // PLRU trỏ Way 1
-                        else                     way_update[1] = 1'b1; // PLRU trỏ Way 2
+                        if (!valid1[index])      way_update[0] = 1'b1;
+                        else if (!valid2[index]) way_update[1] = 1'b1;
+                        else if (plru[index] == 1'b0) way_update[0] = 1'b1;
+                        else                     way_update[1] = 1'b1;
                     end
                 end
             endcase

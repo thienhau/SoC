@@ -67,19 +67,21 @@ endmodule
 // =============================================================================
 module data_cache (
     input  wire        clk, 
-    input  wire        rst_n,          // Sửa thành Reset mức thấp
+    input  wire        rst_n,          
     input  wire        cpu_read_req, 
     input  wire        cpu_write_req,
-    input  wire [31:0] cpu_addr,       // Sửa thành 32-bit
+    input  wire [31:0] cpu_addr,       
     input  wire [31:0] mem_read_data,
     input  wire [31:0] cpu_write_data,
     input  wire        mem_unsigned, 
     input  wire [1:0]  mem_size,
+    input  wire        mem_read_ready,       // BỔ SUNG: Bắt tay địa chỉ đọc
     input  wire        mem_read_valid, 
+    input  wire        mem_write_ready,      // BỔ SUNG: Bắt tay địa chỉ ghi
     input  wire        mem_write_back_valid,
     output reg         mem_read_req, 
     output reg         mem_write_req,
-    output reg  [31:0] mem_addr,       // Sửa thành 32-bit
+    output reg  [31:0] mem_addr,       
     output reg  [31:0] cpu_read_data,
     output reg  [31:0] mem_write_data,
     output reg         dcache_hit, 
@@ -173,15 +175,13 @@ module data_cache (
     endfunction
 
     // --- PHÂN TÍCH ĐỊA CHỈ 32-BIT VÀ BIẾN NỘI BỘ ---
-    // Block size = 32 bits (4 bytes)
-    // Cấu trúc: [31:6] Tag (26 bit) | [5:2] Index (4 bit) | [1:0] Byte Offset
     wire [25:0] tag         = cpu_addr[31:6];
     wire [3:0]  index       = cpu_addr[5:2];
     wire [1:0]  byte_offset = cpu_addr[1:0];
 
     wire [25:0] t1, t2, t3, t4;
     wire [31:0] d1, d2, d3, d4;
-    
+
     // Metadata arrays (Valid, Dirty, PLRU)
     reg       valid1[0:15], valid2[0:15], valid3[0:15], valid4[0:15];
     reg       dirty1[0:15], dirty2[0:15], dirty3[0:15], dirty4[0:15];
@@ -191,10 +191,13 @@ module data_cache (
     parameter IDLE = 2'b00, MEM_READ = 2'b01, MEM_WRITE_BACK = 2'b10;
     reg [1:0] state, next_state;
 
-    reg [1:0]  target_way;       // Chọn Way nào để xử lý (Hit hoặc Replace)
-    reg        victim_dirty;     // Cờ đánh dấu Way bị chọn thay thế đang dơ
-    reg [3:0]  way_write_en;     // Truyền xuống Data/Tag RAM
-    reg [31:0] final_write_data; // Dữ liệu sẽ đẩy vào Data RAM
+    reg [1:0]  target_way;
+    reg        victim_dirty;
+    reg [3:0]  way_write_en;
+    reg [31:0] final_write_data;
+    
+    // BỔ SUNG: Biến lưu trạng thái đã gửi Request thành công để tránh gửi trùng
+    reg req_sent; 
 
     // Kết nối Sub-Modules
     dcache_tag_ram TAGS (
@@ -226,6 +229,7 @@ module data_cache (
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= IDLE;
+            req_sent <= 1'b0;
             for(i=0; i<16; i=i+1) begin 
                 valid1[i]<=1'b0; dirty1[i]<=1'b0; 
                 valid2[i]<=1'b0; dirty2[i]<=1'b0; 
@@ -235,6 +239,15 @@ module data_cache (
             end
         end else begin
             state <= next_state;
+
+            // BỔ SUNG: Quản lý cờ Handshake
+            if (state == IDLE) begin
+                req_sent <= 1'b0;
+            end else if (state == MEM_READ && mem_read_ready && mem_read_req) begin
+                req_sent <= 1'b1;
+            end else if (state == MEM_WRITE_BACK && mem_write_ready && mem_write_req) begin
+                req_sent <= 1'b1;
+            end
 
             // Xóa Dirty bit chuẩn xác khi Ghi-trả xong
             if (state == MEM_WRITE_BACK && mem_write_back_valid) begin
@@ -249,9 +262,7 @@ module data_cache (
             // Cập nhật Metadata khi có thao tác Ghi Thành Công (RAM Update)
             if (way_write_en != 4'b0000) begin
                 plru[index] <= update_plru(plru[index], target_way);
-                
                 if (state == MEM_READ) begin 
-                    // Fill Data từ Mem (Miss Read)
                     case(target_way)
                         2'd0: begin valid1[index]<=1'b1; dirty1[index]<=1'b0; end
                         2'd1: begin valid2[index]<=1'b1; dirty2[index]<=1'b0; end
@@ -259,7 +270,6 @@ module data_cache (
                         2'd3: begin valid4[index]<=1'b1; dirty4[index]<=1'b0; end
                     endcase
                 end else if (state == IDLE) begin 
-                    // Cập nhật từ CPU (Write Hit hoặc Write Miss Allocate)
                     case(target_way)
                         2'd0: begin valid1[index]<=1'b1; dirty1[index]<=1'b1; end
                         2'd1: begin valid2[index]<=1'b1; dirty2[index]<=1'b1; end
@@ -268,7 +278,6 @@ module data_cache (
                     endcase
                 end
             end else if (state == IDLE && cpu_read_req && dcache_hit) begin
-                // Nếu Read Hit, chỉ cập nhật PLRU (không cập nhật valid/dirty)
                 plru[index] <= update_plru(plru[index], target_way);
             end
         end
@@ -278,27 +287,24 @@ module data_cache (
     // LOGIC TỔ HỢP (COMBINATIONAL)
     // -------------------------------------------------------------------------
     always @(*) begin
-        // Reset ngõ ra
         next_state       = state;
         dcache_hit       = 1'b0; 
         dcache_stall     = 1'b0;
         mem_read_req     = 1'b0; 
-        mem_write_req    = 1'b0; 
+        mem_write_req    = 1'b0;
         mem_addr         = 32'b0;
-        cpu_read_data    = 32'b0; 
+        cpu_read_data    = 32'b0;
         mem_write_data   = 32'b0;
         way_write_en     = 4'b0000; 
-        final_write_data = 32'b0; 
+        final_write_data = 32'b0;
         victim_dirty     = 1'b0;
 
-        // 1. Hit/Miss Detection & Victim Selection
         if      (valid1[index] && t1 == tag) begin dcache_hit=1'b1; target_way=2'd0; end
         else if (valid2[index] && t2 == tag) begin dcache_hit=1'b1; target_way=2'd1; end
         else if (valid3[index] && t3 == tag) begin dcache_hit=1'b1; target_way=2'd2; end
         else if (valid4[index] && t4 == tag) begin dcache_hit=1'b1; target_way=2'd3; end
         else begin
             dcache_hit = 1'b0;
-            // Thuật toán ưu tiên invalid way trước, sau đó dùng PLRU
             if      (!valid1[index]) target_way = 2'd0;
             else if (!valid2[index]) target_way = 2'd1;
             else if (!valid3[index]) target_way = 2'd2;
@@ -306,7 +312,6 @@ module data_cache (
             else                     target_way = select_replacement_way(plru[index]);
         end
 
-        // 2. Kiểm tra Victim có Dirty không?
         case (target_way)
             2'd0: victim_dirty = dirty1[index] & valid1[index];
             2'd1: victim_dirty = dirty2[index] & valid2[index];
@@ -314,12 +319,10 @@ module data_cache (
             2'd3: victim_dirty = dirty4[index] & valid4[index];
         endcase
 
-        // 3. FSM Handling
         case (state)
             IDLE: begin
                 if (cpu_read_req) begin
                     if (dcache_hit) begin
-                        // --- READ HIT ---
                         case (target_way)
                             2'd0: cpu_read_data = read_data_with_size(d1, mem_size, byte_offset, mem_unsigned);
                             2'd1: cpu_read_data = read_data_with_size(d2, mem_size, byte_offset, mem_unsigned);
@@ -327,15 +330,13 @@ module data_cache (
                             2'd3: cpu_read_data = read_data_with_size(d4, mem_size, byte_offset, mem_unsigned);
                         endcase
                     end else begin
-                        // --- READ MISS ---
                         dcache_stall = 1'b1;
                         if (victim_dirty) next_state = MEM_WRITE_BACK;
                         else              next_state = MEM_READ;
                     end
                 end else if (cpu_write_req) begin
                     if (dcache_hit) begin
-                        // --- WRITE HIT ---
-                        way_write_en[target_way] = 1'b1; // Kích hoạt ghi RAM
+                        way_write_en[target_way] = 1'b1;
                         case (target_way)
                             2'd0: final_write_data = write_data_with_size(d1, cpu_write_data, mem_size, byte_offset);
                             2'd1: final_write_data = write_data_with_size(d2, cpu_write_data, mem_size, byte_offset);
@@ -343,17 +344,14 @@ module data_cache (
                             2'd3: final_write_data = write_data_with_size(d4, cpu_write_data, mem_size, byte_offset);
                         endcase
                     end else begin
-                        // --- WRITE MISS ---
                         if (victim_dirty) begin
                             dcache_stall = 1'b1;
                             next_state   = MEM_WRITE_BACK;
                         end else if (mem_size != 2'b00) begin
-                            // Ghi Byte/Half thì phải Fetch Data về trước
                             dcache_stall = 1'b1;
                             next_state   = MEM_READ;
                         end else begin
-                            // Write Allocate trực tiếp: Đè Full Word (mem_size = 2'b00)
-                            dcache_stall             = 1'b0; // Không bị trễ
+                            dcache_stall             = 1'b0;
                             way_write_en[target_way] = 1'b1;
                             final_write_data         = cpu_write_data;
                         end
@@ -363,29 +361,24 @@ module data_cache (
 
             MEM_READ: begin
                 dcache_stall = 1'b1;
-                mem_read_req = 1'b1;
-                mem_addr     = {tag, index, 2'b00}; // Địa chỉ 32-bit thẳng hàng 4 Bytes
+                mem_read_req = !req_sent; // BỔ SUNG: Chỉ gửi req khi chưa được accept
+                mem_addr     = {tag, index, 2'b00};
 
                 if (mem_read_valid) begin
                     dcache_stall = 1'b0;
                     mem_read_req = 1'b0;
                     
-                    // Nạp dữ liệu vào CACHE
                     way_write_en[target_way] = 1'b1;
                     final_write_data         = mem_read_data;
-                    
-                    // Đẩy dữ liệu luôn cho CPU (Data Forwarding)
                     cpu_read_data = read_data_with_size(mem_read_data, mem_size, byte_offset, mem_unsigned);
-                    
                     next_state = IDLE;
                 end
             end
 
             MEM_WRITE_BACK: begin
                 dcache_stall  = 1'b1;
-                mem_write_req = 1'b1;
+                mem_write_req = !req_sent; // BỔ SUNG: Chỉ gửi req khi chưa được accept
 
-                // Chuẩn bị địa chỉ 32-bit & dữ liệu cũ để đẩy ra bộ nhớ
                 case (target_way)
                     2'd0: begin mem_addr = {t1, index, 2'b00}; mem_write_data = d1; end
                     2'd1: begin mem_addr = {t2, index, 2'b00}; mem_write_data = d2; end
@@ -395,11 +388,10 @@ module data_cache (
 
                 if (mem_write_back_valid) begin
                     mem_write_req = 1'b0;
-                    // Phân luồng tiếp theo
                     if (cpu_read_req || (cpu_write_req && mem_size != 2'b00))
                         next_state = MEM_READ;
                     else 
-                        next_state = IDLE; // Quay về Write Allocate (nếu đang Write Word)
+                        next_state = IDLE;
                 end
             end
             
