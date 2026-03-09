@@ -94,12 +94,33 @@ module top_soc (
     wire [31:0] ic_rdata;
     wire [1:0]  ic_rresp;
 
-    // JTAG & Debug Internal
-    wire        j_shift, j_update, j_capture, j_sel_dmi, j_tdo_dmi;
-    wire [4:0]  j_ir;
-    wire        dtm_req, dtm_ack;
-    wire [1:0]  dtm_op, dtm_resp;
-    wire [31:0] dtm_addr, dtm_wdata, dtm_rdata;
+    // --- Tín hiệu JTAG DMI (Mới) ---
+    wire        dmi_req_valid_tck, dmi_resp_ready_tck;
+    wire [6:0]  dmi_req_addr_tck;
+    wire [31:0] dmi_req_data_tck;
+    wire [1:0]  dmi_req_op_tck;
+    
+    wire        dmi_resp_valid_tck;
+    wire [31:0] dmi_resp_data_tck;
+    wire [1:0]  dmi_resp_op_tck;
+
+    wire        dmi_req_valid_sys, dmi_resp_ready_sys;
+    wire [6:0]  dmi_req_addr_sys;
+    wire [31:0] dmi_req_data_sys;
+    wire [1:0]  dmi_req_op_sys;
+
+    wire        dmi_resp_valid_sys;
+    wire [31:0] dmi_resp_data_sys;
+    wire [1:0]  dmi_resp_op_sys;
+
+    // --- Tín hiệu Debug AXI (Mới) ---
+    wire        debug_axi_req;
+    wire [1:0]  debug_axi_op;
+    wire [31:0] debug_axi_addr;
+    wire [31:0] debug_axi_wdata;
+    wire        debug_axi_ack;
+    wire [31:0] debug_axi_rdata;
+    wire [1:0]  debug_axi_resp;
 
     wire clk_en_cpu, clk_en_dbg, clk_en_tmr, clk_en_urt, clk_en_spi, clk_en_i2c, clk_en_gpo, clk_en_acc;
     wire clk_cpu_gated, clk_dbg_gated, clk_tmr_gated, clk_urt_gated, clk_spi_gated, clk_i2c_gated, clk_gpo_gated, clk_acc_gated;
@@ -113,7 +134,7 @@ module top_soc (
     wire core_ext_irq = plic_irq_sync[1];
 
     // =========================================================================
-    // 3. CLOCK GATING & JTAG TAP
+    // 3. CLOCK GATING & JTAG DEBUG SYSTEM (CẬP NHẬT MỚI)
     // =========================================================================
     clock_gate CG_CPU (.clk_in(clk_core), .en(clk_en_cpu), .test_en(1'b0), .clk_out(clk_cpu_gated));
     clock_gate CG_DBG (.clk_in(clk_core), .en(clk_en_dbg), .test_en(1'b0), .clk_out(clk_dbg_gated));
@@ -124,18 +145,83 @@ module top_soc (
     clock_gate CG_GPO (.clk_in(clk_bus),  .en(clk_en_gpo), .test_en(1'b0), .clk_out(clk_gpo_gated));
     clock_gate CG_ACC (.clk_in(clk_bus),  .en(clk_en_acc), .test_en(1'b0), .clk_out(clk_acc_gated));
 
-    jtag_tap JTAG_TAP_INST (
-        .tck(jtag_tck), .trst_n(jtag_trst_n), .tms(jtag_tms), .tdi(jtag_tdi), .tdo(jtag_tdo),
-        .o_ir(j_ir), .o_shift_dr(j_shift), .o_capture_dr(j_capture), .o_update_dr(j_update),
-        .o_sel_dmi(j_sel_dmi), .i_tdo_dmi(j_tdo_dmi)
+    // 3.1 DTM - Trình điều khiển JTAG chuẩn RISC-V (Miền TCK)
+    rv_jtag_dtm #( .ABITS(7) ) JTAG_DTM_INST (
+        .tck(jtag_tck),
+        .trst_n(jtag_trst_n),
+        .tms(jtag_tms),
+        .tdi(jtag_tdi),
+        .tdo(jtag_tdo),
+        
+        .dmi_req_valid(dmi_req_valid_tck),
+        .dmi_req_addr(dmi_req_addr_tck),
+        .dmi_req_data(dmi_req_data_tck),
+        .dmi_req_op(dmi_req_op_tck),
+        
+        .dmi_resp_ready(dmi_resp_ready_tck),
+        .dmi_resp_valid(dmi_resp_valid_tck),
+        .dmi_resp_data(dmi_resp_data_tck),
+        .dmi_resp_op(dmi_resp_op_tck)
     );
 
-    debug_module DBG_MODULE_INST (
-        .tck(jtag_tck), .trst_n(jtag_trst_n), .i_shift_dr(j_shift), .i_capture_dr(j_capture), .i_update_dr(j_update),
-        .i_sel_dmi(j_sel_dmi), .i_tdi(jtag_tdi), .o_tdo(j_tdo_dmi),
-        .clk_sys(clk_dbg_gated), .rst_sys_n(core_rst_n),
-        .req_sys(dtm_req), .op_sys(dtm_op), .addr_sys(dtm_addr), .wdata_sys(dtm_wdata),
-        .ack_sys(dtm_ack), .resp_sys(dtm_resp), .rdata_sys(dtm_rdata)
+    // 3.2 DMI Clock Domain Crossing (CDC) - Đồng bộ Handshake giữa TCK và SYS
+    // Mạch đồng bộ tín hiệu cơ bản sử dụng Flip-Flops
+    reg [1:0] req_valid_sync, resp_ready_sync, resp_valid_sync, req_ready_sync;
+    
+    always @(posedge clk_dbg_gated or negedge core_rst_n) begin
+        if (!core_rst_n) begin
+            req_valid_sync <= 2'b00;
+            resp_ready_sync <= 2'b00;
+        end else begin
+            req_valid_sync <= {req_valid_sync[0], dmi_req_valid_tck};
+            resp_ready_sync <= {resp_ready_sync[0], dmi_resp_ready_tck};
+        end
+    end
+
+    always @(posedge jtag_tck or negedge jtag_trst_n) begin
+        if (!jtag_trst_n) begin
+            resp_valid_sync <= 2'b00;
+            req_ready_sync <= 2'b00;
+        end else begin
+            resp_valid_sync <= {resp_valid_sync[0], dmi_resp_valid_sys};
+            req_ready_sync <= {req_ready_sync[0], dmi_resp_ready_sys};
+        end
+    end
+
+    // Gán dữ liệu (Giả định dữ liệu giữ ổn định khi cờ Valid bật lên)
+    assign dmi_req_valid_sys = req_valid_sync[1];
+    assign dmi_req_addr_sys  = dmi_req_addr_tck;
+    assign dmi_req_data_sys  = dmi_req_data_tck;
+    assign dmi_req_op_sys    = dmi_req_op_tck;
+    
+    assign dmi_resp_ready_sys = resp_ready_sync[1];
+    assign dmi_resp_valid_tck = resp_valid_sync[1];
+    assign dmi_resp_data_tck  = dmi_resp_data_sys;
+    assign dmi_resp_op_tck    = dmi_resp_op_sys;
+
+    // 3.3 Debug Module SBA - Hệ thống truy cập Bus không can thiệp CPU
+    rv_debug_module_sba DBG_MODULE_SBA_INST (
+        .clk_sys(clk_dbg_gated),
+        .rst_sys_n(core_rst_n),
+
+        // Giao tiếp DMI (Sys side)
+        .dmi_req_valid(dmi_req_valid_sys),
+        .dmi_req_addr(dmi_req_addr_sys),
+        .dmi_req_data(dmi_req_data_sys),
+        .dmi_req_op(dmi_req_op_sys),
+        .dmi_resp_ready(dmi_resp_ready_sys),
+        .dmi_resp_valid(dmi_resp_valid_sys),
+        .dmi_resp_data(dmi_resp_data_sys),
+        .dmi_resp_op(dmi_resp_op_sys),
+
+        // Giao tiếp với AXI Master
+        .axi_req(debug_axi_req),
+        .axi_op(debug_axi_op),
+        .axi_addr(debug_axi_addr),
+        .axi_wdata(debug_axi_wdata),
+        .axi_ack(debug_axi_ack),
+        .axi_rdata(debug_axi_rdata),
+        .axi_resp(debug_axi_resp)
     );
 
     // =========================================================================
@@ -248,11 +334,22 @@ module top_soc (
         .m_axi_rdata(m1_rdata), .m_axi_rresp(m1_rresp), .m_axi_rvalid(m1_rvalid), .m_axi_rready(m1_rready)
     );
 
-    // Adapter DTM Debug (Giả định Debug kết nối vào Bus)
+    // Adapter DTM Debug (Miền Bus) - KẾT NỐI VỚI DEBUG MODULE SBA
     dtm_axi_master #(.ADDR_WIDTH(32)) M2_DTM_AXI_INST (
-        .clk_sys(clk_bus), .rst_sys_n(bus_rst_n),
-        .i_req(dtm_req), .i_op(dtm_op), .i_addr(dtm_addr), .i_wdata(dtm_wdata),
-        .o_ack(dtm_ack), .o_resp(dtm_resp), .o_rdata(dtm_rdata),
+        .clk_sys(clk_bus), 
+        .rst_sys_n(bus_rst_n),
+        
+        // Nhận lệnh từ DM thay vì JTAG trực tiếp
+        .i_req(debug_axi_req), 
+        .i_op(debug_axi_op), 
+        .i_addr(debug_axi_addr), 
+        .i_wdata(debug_axi_wdata),
+        
+        .o_ack(debug_axi_ack), 
+        .o_resp(debug_axi_resp), 
+        .o_rdata(debug_axi_rdata),
+        
+        // AXI Interface đến Interconnect
         .m_axi_awaddr(m2_awaddr), .m_axi_awvalid(m2_awvalid), .m_axi_awready(m2_awready),
         .m_axi_wdata(m2_wdata), .m_axi_wstrb(m2_wstrb), .m_axi_wvalid(m2_wvalid), .m_axi_wready(m2_wready),
         .m_axi_bresp(m2_bresp), .m_axi_bvalid(m2_bvalid), .m_axi_bready(m2_bready),
