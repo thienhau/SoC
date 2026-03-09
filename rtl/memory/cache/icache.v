@@ -76,23 +76,24 @@ module instruction_cache (
     output reg         m_axi_rready
 );
 
+    // Giải mã địa chỉ
     wire [24:0] tag         = cpu_addr[31:7];
     wire [3:0]  index       = cpu_addr[6:3];
     wire        word_offset = cpu_addr[2];
 
     wire [63:0] data1_out, data2_out;
     wire [24:0] tag1_out, tag2_out;
-
+    
     reg valid1 [0:15];
     reg valid2 [0:15];
     reg plru   [0:15];
-    
-    // Cấu hình Burst cố định: 2 nhịp (arlen = 1), mỗi nhịp 4 byte (arsize = 2), tăng dần (arburst = 1)
-    assign m_axi_arlen   = 8'd1; 
-    assign m_axi_arsize  = 3'b010; 
-    assign m_axi_arburst = 2'b01;  
 
-    // Các trạng thái FSM (Sử dụng AXI Burst)
+    // Cấu hình Burst cố định
+    assign m_axi_arlen   = 8'd1;   // 2 nhịp (Len + 1)
+    assign m_axi_arsize  = 3'b010; // 4 byte mỗi nhịp
+    assign m_axi_arburst = 2'b01;  // INCR burst
+
+    // Các trạng thái FSM
     localparam IDLE       = 3'd0;
     localparam AR_REQ     = 3'd1;
     localparam R_WAIT_1   = 3'd2;
@@ -101,8 +102,9 @@ module instruction_cache (
     
     reg [2:0] state, next_state;
     reg [1:0] way_update;
-    reg [63:0] fetch_buffer; // Đệm để ghép 2 nhịp 32-bit thành 64-bit
+    reg [63:0] fetch_buffer;
     
+    // Khởi tạo RAM con
     icache_data_ram DATA_RAM (
         .clk(clk), 
         .index(index), 
@@ -132,15 +134,19 @@ module instruction_cache (
                 plru[i]   <= 1'b0; 
             end
         end else if (flush) begin
+            // Khi có flush, hủy bỏ dữ liệu đang nạp dở và về IDLE
             state <= IDLE;
+            fetch_buffer <= 64'b0;
         end else begin
             state <= next_state;
-            
-            // PLRU Update
+
+            // Cập nhật PLRU khi CPU đọc trúng (Hit)
             if (cpu_read_req && state == IDLE) begin
                 if (valid1[index] && tag1_out == tag) plru[index] <= 1'b1;
                 else if (valid2[index] && tag2_out == tag) plru[index] <= 1'b0;
-            end else if (state == UPDATE_RAM) begin
+            end 
+            // Cập nhật PLRU và Valid sau khi nạp từ Bus
+            else if (state == UPDATE_RAM) begin
                 if (way_update[0]) begin 
                     valid1[index] <= 1'b1;
                     plru[index]   <= 1'b1; 
@@ -150,29 +156,33 @@ module instruction_cache (
                 end
             end
 
-            // Capture Data từ Bus AXI
+            // Capture Data từ Bus AXI (Ghép 2 nhịp 32-bit thành 64-bit)
             if (state == R_WAIT_1 && m_axi_rvalid && m_axi_rready) begin
-                fetch_buffer[31:0] <= m_axi_rdata; // Nhịp 1: 32 bit thấp
+                fetch_buffer[31:0] <= m_axi_rdata;
             end else if (state == R_WAIT_2 && m_axi_rvalid && m_axi_rready) begin
-                fetch_buffer[63:32] <= m_axi_rdata; // Nhịp 2: 32 bit cao
+                fetch_buffer[63:32] <= m_axi_rdata;
             end
         end
     end
 
-    // Logic tổ hợp FSM
+    // Logic tổ hợp điều khiển FSM và tín hiệu Bus
     always @(*) begin
+        // Giá trị mặc định
         next_state    = state;
         icache_hit    = 1'b0;
         icache_stall  = 1'b0; 
         cpu_read_data = 32'b0;
         way_update    = 2'b00;
-        
         m_axi_arvalid = 1'b0;
         m_axi_araddr  = {tag, index, 3'b000}; // Luôn căn lề 8 byte
         m_axi_rready  = 1'b0;
 
         if (flush) begin
-            icache_stall = 1'b1;
+            // Khi flush: Ép dừng Bus, báo Stall và ép trạng thái về IDLE
+            icache_stall  = 1'b1;
+            m_axi_arvalid = 1'b0;
+            m_axi_rready  = 1'b0;
+            next_state    = IDLE;
         end else begin
             case (state)
                 IDLE: begin
@@ -184,6 +194,7 @@ module instruction_cache (
                             icache_hit    = 1'b1;
                             cpu_read_data = (word_offset == 1'b0) ? data2_out[31:0] : data2_out[63:32];
                         end else begin
+                            // Miss: Bắt đầu quy trình nạp từ Bus
                             icache_stall  = 1'b1;
                             next_state    = AR_REQ;
                         end
@@ -193,7 +204,6 @@ module instruction_cache (
                 AR_REQ: begin
                     icache_stall  = 1'b1;
                     m_axi_arvalid = 1'b1;
-                    m_axi_araddr  = {tag, index, 3'b000};
                     if (m_axi_arready) begin
                         next_state = R_WAIT_1;
                     end
@@ -217,13 +227,18 @@ module instruction_cache (
                 
                 UPDATE_RAM: begin
                     icache_stall = 1'b1;
+                    // Thuật toán thay thế PLRU
                     if (!valid1[index])      way_update[0] = 1'b1;
                     else if (!valid2[index]) way_update[1] = 1'b1;
                     else if (plru[index] == 1'b0) way_update[0] = 1'b1;
                     else                     way_update[1] = 1'b1;
+                    
                     next_state = IDLE;
                 end
+                
+                default: next_state = IDLE;
             endcase
         end
     end
+
 endmodule

@@ -243,10 +243,12 @@ module data_cache (
             // BỔ SUNG: Quản lý cờ Handshake
             if (state == IDLE) begin
                 req_sent <= 1'b0;
-            end else if (state == MEM_READ && mem_read_ready && mem_read_req) begin
-                req_sent <= 1'b1;
-            end else if (state == MEM_WRITE_BACK && mem_write_ready && mem_write_req) begin
-                req_sent <= 1'b1;
+            end else if (state == MEM_READ) begin
+                if (mem_read_valid) req_sent <= 1'b0; // Xóa cờ khi nhận data xong
+                else if (mem_read_ready && mem_read_req) req_sent <= 1'b1;
+            end else if (state == MEM_WRITE_BACK) begin
+                if (mem_write_back_valid) req_sent <= 1'b0; // Xóa cờ khi write back xong (sống còn để nhảy sang MEM_READ không bị kẹt)
+                else if (mem_write_ready && mem_write_req) req_sent <= 1'b1;
             end
 
             // Xóa Dirty bit chuẩn xác khi Ghi-trả xong
