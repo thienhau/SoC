@@ -371,7 +371,11 @@ module data_cache (
                     mem_read_req = 1'b0;
                     
                     way_write_en[target_way] = 1'b1;
-                    final_write_data         = mem_read_data;
+                    if (cpu_write_req) begin
+                        final_write_data = write_data_with_size(mem_read_data, cpu_write_data, mem_size, byte_offset);
+                    end else begin
+                        final_write_data = mem_read_data;
+                    end
                     cpu_read_data = read_data_with_size(mem_read_data, mem_size, byte_offset, mem_unsigned);
                     next_state = IDLE;
                 end

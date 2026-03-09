@@ -378,9 +378,9 @@ module tb_data_cache;
         $display("  Passed Tests    : %0d", passed_tests);
         $display("  Failed Tests    : %0d", failed_tests);
         if (failed_tests == 0) begin
-            $display("  Status          : [ALL PASSED] EXCELLENT DESIGN!");
+            $display("  Status          : [ALL TEST PASSED]");
         end else begin
-            $display("  Status          : [FAILED] PLEASE REVIEW LOGS.");
+            $display("  Status          : [FAILED].");
         end
         $display("=========================================================================\n");
 

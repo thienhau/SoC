@@ -172,27 +172,29 @@ module tb_instruction_cache;
     task do_cpu_read;
         input  [31:0] addr;
         output [31:0] data;
-        output        hit;
+        output        hit; // Trạng thái Hit đầu tiên khi yêu cầu
         begin
             @(posedge clk);
             cpu_read_req = 1;
             cpu_addr     = addr;
             
-            // Wait 1 cycle for hit evaluation
+            // Chờ 1 nhịp để cache phản hồi Hit/Miss ban đầu
             @(posedge clk);
-            #1; // Delay slightly to read combinational outputs stably
-            hit = icache_hit;
+            #1; // Delay nhẹ để đọc tín hiệu combinational ổn định
             
-            // If it stalls, wait until stall goes low
+            hit = icache_hit; // LƯU LẠI KẾT QUẢ HIT/MISS BAN ĐẦU VÀ KHÔNG GHI ĐÈ
+            
+            // Nếu cache bị miss và stall, tiếp tục chờ đến khi lấy xong dữ liệu
             while (icache_stall) begin
                 @(posedge clk);
                 #1;
-                hit = icache_hit;
+                // XÓA DÒNG GHI ĐÈ: "hit = icache_hit;" Ở ĐÂY!
             end
             
+            // Khi stall xuống 0, dữ liệu đã sẵn sàng
             data = cpu_read_data;
             
-            // Deassert req
+            // Giải phóng tín hiệu yêu cầu
             @(posedge clk);
             cpu_read_req = 0;
         end
@@ -294,13 +296,15 @@ module tb_instruction_cache;
         // ---------------------------------------------------------------------
         $display("\n=== PHASE 7: Verify Eviction Correctness ===");
         // ---------------------------------------------------------------------
-        test_addr = 32'h0000_0080; // Tag 1 (which was in Way 2 and should be evicted)
+        test_addr = 32'h0000_0080; // Tag 1 (đã bị xóa ở P6)
         do_cpu_read(test_addr, actual_data, actual_hit);
         check_result("P7: Read evicted Tag 1 should MISS", get_expected_data(test_addr), 1'b0, actual_data, actual_hit);
         
-        test_addr = 32'h0000_0000; // Tag 0 (Way 1, should still be alive)
+        // LƯU Ý: Lệnh đọc Tag 1 ở trên đã kích hoạt Fetch và ghi đè mất Tag 0. 
+        // Do đó lần đọc Tag 0 này CHẮC CHẮN PHẢI MISS!
+        test_addr = 32'h0000_0000; 
         do_cpu_read(test_addr, actual_data, actual_hit);
-        check_result("P7: Read Tag 0 should still HIT (PLRU worked correctly)", get_expected_data(test_addr), 1'b1, actual_data, actual_hit);
+        check_result("P7: Read Tag 0 should MISS (Evicted by P7a fetch)", get_expected_data(test_addr), 1'b0, actual_data, actual_hit);
 
         // ---------------------------------------------------------------------
         $display("\n=== PHASE 8: Cache Flush Mechanism ===");
@@ -326,6 +330,11 @@ module tb_instruction_cache;
         // ---------------------------------------------------------------------
         $display("\n=== PHASE 10: Randomized Sequential Burst (Full Cache Fill) ===");
         // ---------------------------------------------------------------------
+        @(posedge clk);
+        flush = 1;
+        @(posedge clk);
+        flush = 0;
+
         // Loop through all 16 sets, filling them up
         for (i = 0; i < 16; i = i + 1) begin
             test_addr = (i * 8); // Index i, offset 0
@@ -346,9 +355,9 @@ module tb_instruction_cache;
         $display("  Total Tests Passed: %0d", pass_cnt);
         $display("  Total Tests Failed: %0d", fail_cnt);
         if (fail_cnt == 0) begin
-            $display("\n  >>> RESULT: ALL TESTS PASSED! EXCELLENT DESIGN! <<< \n");
+            $display("\n  >>> RESULT: ALL TESTS PASSED! <<< \n");
         end else begin
-            $display("\n  >>> RESULT: FAILED! PLEASE CHECK THE LOGS. <<< \n");
+            $display("\n  >>> RESULT: FAILED! <<< \n");
         end
         $display("============================================================\n");
         

@@ -137,6 +137,10 @@ module instruction_cache (
             // Khi có flush, hủy bỏ dữ liệu đang nạp dở và về IDLE
             state <= IDLE;
             fetch_buffer <= 64'b0;
+            for (i=0; i<16; i=i+1) begin 
+                valid1[i] <= 1'b0;
+                valid2[i] <= 1'b0; 
+            end
         end else begin
             state <= next_state;
 
