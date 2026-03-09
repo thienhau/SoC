@@ -104,8 +104,6 @@ module id_ex_register (
     input [4:0] fpu_operation,
     input [31:0] read_f_data1,
     input [31:0] read_f_data2,
-    input [31:0] read_f_data3,
-    input [4:0] rs3,
     output reg [31:0] id_ex_pc_plus_4,
     output reg [31:0] id_ex_pc_in,
     output reg [2:0] id_ex_funct3,
@@ -149,9 +147,7 @@ module id_ex_register (
     output reg id_ex_x_to_f,
     output reg [4:0] id_ex_fpu_operation,
     output reg [31:0] id_ex_read_f_data1,
-    output reg [31:0] id_ex_read_f_data2,
-    output reg [31:0] id_ex_read_f_data3,
-    output reg [4:0] id_ex_rs3
+    output reg [31:0] id_ex_read_f_data2
 );
 
     always @(posedge clk or negedge reset_n) begin
@@ -200,8 +196,6 @@ module id_ex_register (
             id_ex_fpu_operation <= 5'd0;
             id_ex_read_f_data1 <= 32'd0;
             id_ex_read_f_data2 <= 32'd0;
-            id_ex_read_f_data3 <= 32'd0;
-            id_ex_rs3 <= 5'd0;
         end else if (riscv_start && !riscv_done) begin
             if (flush) begin
                 id_ex_reg_write <= 1'b0;
@@ -296,8 +290,6 @@ module id_ex_register (
                 id_ex_fpu_operation <= fpu_operation;
                 id_ex_read_f_data1 <= read_f_data1;
                 id_ex_read_f_data2 <= read_f_data2;
-                id_ex_read_f_data3 <= read_f_data3;
-                id_ex_rs3 <= rs3;
             end
         end
     end
