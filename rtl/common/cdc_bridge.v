@@ -66,68 +66,6 @@ module native_cdc_bridge (
 
 endmodule
 
-`timescale 1ns / 1ps
-
-// =============================================================================
-// SUB-MODULE: Asynchronous FIFO (Sử dụng Gray Code)
-// =============================================================================
-module async_fifo_cdc #(
-    parameter DATA_WIDTH = 32,
-    parameter ADDR_WIDTH = 4 // Sâu 16 words
-)(
-    input  wire                  wclk,
-    input  wire                  wrst_n,
-    input  wire                  winc,
-    input  wire [DATA_WIDTH-1:0] wdata,
-    output wire                  wfull,
-
-    input  wire                  rclk,
-    input  wire                  rrst_n,
-    input  wire                  rinc,
-    output wire [DATA_WIDTH-1:0] rdata,
-    output wire                  rempty
-);
-    reg [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
-    reg [ADDR_WIDTH:0] wptr, rptr;
-    reg [ADDR_WIDTH:0] wq2_rptr, wq1_rptr, rq2_wptr, rq1_wptr;
-
-    wire [ADDR_WIDTH:0] wptr_gray = wptr ^ (wptr >> 1);
-    wire [ADDR_WIDTH:0] rptr_gray = rptr ^ (rptr >> 1);
-
-    // Đồng bộ pointer từ miền R sang miền W
-    always @(posedge wclk or negedge wrst_n) begin
-        if (!wrst_n) {wq2_rptr, wq1_rptr} <= 0;
-        else         {wq2_rptr, wq1_rptr} <= {wq1_rptr, rptr_gray};
-    end
-
-    // Đồng bộ pointer từ miền W sang miền R
-    always @(posedge rclk or negedge rrst_n) begin
-        if (!rrst_n) {rq2_wptr, rq1_wptr} <= 0;
-        else         {rq2_wptr, rq1_wptr} <= {rq1_wptr, wptr_gray};
-    end
-
-    assign rempty = (rptr_gray == rq2_wptr);
-    assign wfull  = (wptr_gray == {~wq2_rptr[ADDR_WIDTH:ADDR_WIDTH-1], wq2_rptr[ADDR_WIDTH-2:0]});
-
-    always @(posedge wclk or negedge wrst_n) begin
-        if (!wrst_n) wptr <= 0;
-        else if (winc && !wfull) begin
-            mem[wptr[ADDR_WIDTH-1:0]] <= wdata;
-            wptr <= wptr + 1;
-        end
-    end
-
-    always @(posedge rclk or negedge rrst_n) begin
-        if (!rrst_n) rptr <= 0;
-        else if (rinc && !rempty) rptr <= rptr + 1;
-    end
-
-    assign rdata = mem[rptr[ADDR_WIDTH-1:0]];
-endmodule
-
-// =============================================================================
-// MAIN MODULE: AXI4 Burst Read CDC Bridge
-// =============================================================================
 module axi4_read_cdc #(
     parameter ADDR_WIDTH = 32,
     parameter DATA_WIDTH = 32
