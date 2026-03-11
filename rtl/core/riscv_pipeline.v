@@ -240,7 +240,7 @@ module riscv_pipeline (
         if (!reset_n) begin
             pc_reg <= reset_vector_in;
         end else if (riscv_start && !riscv_done) begin
-            if (flush_branch || flush_jal) begin
+            if (flush_branch || flush_jal) begin // Add flush trap ----------------------
                 pc_reg <= pc_out;
             end else if (!load_use_stall && !icache_stall && !dcache_stall && !md_alu_stall) begin
                 pc_reg <= pc_out;

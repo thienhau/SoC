@@ -15,43 +15,50 @@ module mock_spi_flash (
     integer bit_cnt;
     integer state; 
 
-    initial begin
-        // Khởi tạo mã máy tính tổng 1 đến 10.
-        // Chú ý: Đã chuyển đổi li -> addi (addi rd, x0, imm)
+initial begin
+        // --- CHƯƠNG TRÌNH TÍNH TỔNG VÀ KIỂM TRA KẾT QUẢ ---
         
-        // 1. Lệnh: addi t0, x0, 0 (Thay cho li t0, 0) -> Mã máy: 00000293
+        // 1. addi t0, x0, 0      -> t0 (sum) = 0
         flash_mem[0]=8'h00; flash_mem[1]=8'h00; flash_mem[2]=8'h02; flash_mem[3]=8'h93;
 
-        // 2. Lệnh: addi t1, x0, 1 (Thay cho li t1, 1) -> Mã máy: 00100313
+        // 2. addi t1, x0, 1      -> t1 (count) = 1
         flash_mem[4]=8'h00; flash_mem[5]=8'h10; flash_mem[6]=8'h03; flash_mem[7]=8'h13;
 
-        // 3. Lệnh: addi t2, x0, 11 (Thay cho li t2, 11) -> Mã máy: 00b00393
-        // Giải mã: imm=11(00b), rs1=0, func3=0, rd=x7(t2), opcode=13
+        // 3. addi t2, x0, 11     -> t2 (limit) = 11
         flash_mem[8]=8'h00; flash_mem[9]=8'hb0; flash_mem[10]=8'h03; flash_mem[11]=8'h93;
 
-        // 4. Lệnh: add t0, t0, t1 -> Mã máy: 006282b3
+        // 4. add t0, t0, t1      -> LOOP: sum = sum + count
         flash_mem[12]=8'h00; flash_mem[13]=8'h62; flash_mem[14]=8'h82; flash_mem[15]=8'hb3;
 
-        // 5. Lệnh: addi t1, t1, 1 -> Mã máy: 00130313
+        // 5. addi t1, t1, 1     -> count++
         flash_mem[16]=8'h00; flash_mem[17]=8'h13; flash_mem[18]=8'h03; flash_mem[19]=8'h13;
 
-        // 6. Lệnh: bltu t1, t2, -8 (Quay lại lệnh add t0, t0, t1 tại byte 12)
-        flash_mem[20]=8'hfe; flash_mem[21]=8'h73; flash_mem[22]=8'h64; flash_mem[23]=8'he3;
+        // 6. bltu t1, t2, -8     -> if (count < 11) quay lại lệnh 4 (byte 12)
+        flash_mem[20]=8'hfe; flash_mem[21]=8'h73; flash_mem[22]=8'h6c; flash_mem[23]=8'he3;
 
-        // 7. Lệnh: lui a0, 0x80000 -> Mã máy: 80000537
-        flash_mem[24]=8'h80; flash_mem[25]=8'h00; flash_mem[26]=8'h05; flash_mem[27]=8'h37;
+        // --- ĐOẠN KIỂM TRA KẾT QUẢ (PHASE MỚI) ---
 
-        // 8. Lệnh: sw t0, 256(a0) -> Mã máy: 10552023
-        flash_mem[28]=8'h10; flash_mem[29]=8'h55; flash_mem[30]=8'h20; flash_mem[31]=8'h23;
+        // 7. addi t3, x0, 55     -> t3 = 55 (Giá trị kỳ vọng)
+        flash_mem[24]=8'h03; flash_mem[25]=8'h70; flash_mem[26]=8'h0e; flash_mem[27]=8'h13;
 
-        // 9. Lệnh: lui a1, 0x40006 -> Mã máy: 400065b7
+        // 8. bne t0, t3, 12      -> Nếu sum != 55, nhảy đến lệnh TRAP (byte 40)
+        // imm = 12 (0xC), rs1=t0(x5), rs2=t3(x28)
+        flash_mem[28]=8'h01; flash_mem[29]=8'hc2; flash_mem[30]=8'h96; flash_mem[31]=8'h63;
+
+        // 9. lui a1, 0x40006     -> Load địa chỉ GPIO
         flash_mem[32]=8'h40; flash_mem[33]=8'h00; flash_mem[34]=8'h65; flash_mem[35]=8'hb7;
 
-        // 10. Lệnh: sw t0, 4(a1) -> Mã máy: 0055a223
+        // 10. sw t0, 4(a1)       -> Xuất kết quả ra LED (GPIO)
         flash_mem[36]=8'h00; flash_mem[37]=8'h55; flash_mem[38]=8'ha2; flash_mem[39]=8'h23;
 
-        // 11. Lệnh: j . (Nhảy tại chỗ vô tận) -> Mã máy: 0000006f
-        flash_mem[40]=8'h00; flash_mem[41]=8'h00; flash_mem[42]=8'h00; flash_mem[43]=8'h6f;
+        // 11. lui a2, 0x80000    -> Load địa chỉ RAM (0x8000_0000) để ghi kết quả (Phase 4)
+        flash_mem[40]=8'h80; flash_mem[41]=8'h00; flash_mem[42]=8'h06; flash_mem[43]=8'h37;
+
+        // 12. sw t0, 256(a2)     -> Ghi 55 vào địa chỉ 0x8000_0100 (Khớp logic wait Phase 4)
+        flash_mem[44]=8'h10; flash_mem[45]=8'h56; flash_mem[46]=8'h20; flash_mem[47]=8'h23;
+
+        // 13. ecall              -> Lệnh kết thúc chương trình để CPU_CORE.riscv_done lên 1
+        flash_mem[48]=8'h00; flash_mem[49]=8'h00; flash_mem[50]=8'h00; flash_mem[51]=8'h73;
 
         bit_cnt = 0; state = 0; miso = 1'bz;
     end
@@ -276,27 +283,57 @@ module tb_soc_main_flow();
         if (s3_rvalid && s3_rready)   $display("[BUS_DATA] FLASH->M: Data 0x%h", s3_rdata);
         if (s1_wvalid && s1_wready && s1_awaddr >= 32'h8000_0000) $display("[DEBUG_COPY] Wrote to RAM at 0x%h | Data: 0x%h", s1_awaddr, s1_wdata);
     end
+    always @(posedge clk_core) begin
+        if (rst_n && CPU_CORE.riscv_start && !cpu_ic_stall) begin
+            // Chỉ log khi PC nằm trong vùng Main RAM (0x8000_0000 - 0x8000_1000)
+            if (CPU_CORE.pc_reg >= 32'h8000_0000 && CPU_CORE.pc_reg < 32'h8000_1000) begin
+                
+                case (cpu_ic_rdata)
+                    // --- Loop Calculation (Phase 3) ---
+                    32'h00000293: $display("[EXEC] Time: %t | PC: 0x%h | li t0, 0          | Init Sum = 0", $time, CPU_CORE.pc_reg);
+                    32'h00100313: $display("[EXEC] Time: %t | PC: 0x%h | li t1, 1          | Init Count = 1", $time, CPU_CORE.pc_reg);
+                    32'h00b00393: $display("[EXEC] Time: %t | PC: 0x%h | li t2, 11         | Load Limit n = 11", $time, CPU_CORE.pc_reg);
+                    32'h006282b3: $display("[EXEC] Time: %t | PC: 0x%h | add t0, t0, t1    | Accumulating: Sum = %0d", $time, CPU_CORE.pc_reg, CPU_CORE.RF.rf_main[5]);
+                    32'h00130313: $display("[EXEC] Time: %t | PC: 0x%h | addi t1, t1, 1    | Increment: Count = %0d", $time, CPU_CORE.pc_reg, CPU_CORE.RF.rf_main[6]);
+                    32'hfe736ce3: $display("[EXEC] Time: %t | PC: 0x%h | bltu t1, t2, -8   | Checking loop condition...", $time, CPU_CORE.pc_reg);
+
+                    // --- Verification ---
+                    32'h03700e13: $display("[EXEC] Time: %t | PC: 0x%h | li t3, 55         | Load expected value (55) into t3", $time, CPU_CORE.pc_reg);
+                    32'h01c29663: begin 
+                        if (CPU_CORE.RF.rf_main[5] == 55)
+                            $display("[CHECK] Time: %t | PC: 0x%h | bne t0, t3, offset | RESULT MATCHED (Sum=55). Proceeding...", $time, CPU_CORE.pc_reg);
+                        else
+                            $display("[CHECK] Time: %t | PC: 0x%h | bne t0, t3, offset | RESULT MISMATCH (Sum=%0d). Jumping to TRAP!", $time, CPU_CORE.pc_reg, CPU_CORE.RF.rf_main[5]);
+                    end
+
+                    // --- GPIO Output (Phase 5) ---
+                    32'h400065b7: $display("[GPIO] Time: %t | PC: 0x%h | lui a1, 0x40006   | Pointer set to APB GPIO range", $time, CPU_CORE.pc_reg);
+                    32'h0055a223: $display("[GPIO] Time: %t | PC: 0x%h | sw t0, 4(a1)      | LED OUTPUT: Data %0d written to GPIO_DATA_OUT", $time, CPU_CORE.pc_reg, CPU_CORE.RF.rf_main[5]);
+
+                    // --- RAM Result Storage (Phase 4) ---
+                    32'h80000637: $display("[MEM]  Time: %t | PC: 0x%h | lui a2, 0x80000   | Set RAM base for result storage", $time, CPU_CORE.pc_reg);
+                    32'h10562023: $display("[MEM]  Time: %t | PC: 0x%h | sw t0, 256(a2)    | Result 55 saved to RAM 0x80000100", $time, CPU_CORE.pc_reg);
+
+                    // --- Final Termination ---
+                    32'h00000073: begin
+                        $display("[DONE] Time: %t | PC: 0x%h | ecall             | SYSTEM CALL: FINISHING SIMULATION.", $time, CPU_CORE.pc_reg);
+                    end
+                    
+                    32'h0000006f: begin
+                        $display("[DONE] Time: %t | PC: 0x%h | j .               | IDLE LOOP DETECTED.", $time, CPU_CORE.pc_reg);
+                    end
+
+                    default: $display("[EXEC] Time: %t | PC: 0x%h | Instr: 0x%h  | Executing...", $time, CPU_CORE.pc_reg, cpu_ic_rdata);
+                endcase
+            end
+        end
+    end
 
     // =================================================================
     // MAIN TEST SEQUENCE
     // =================================================================
     integer phase;
     
-    // Safety Fallback
-    initial begin
-        #150000;
-        if (phase < 3) begin
-            $display("[WARNING] SPI Load Timeout! Fallback Preloading RAM directly.");
-            SYSTEM_RAM_INST.bram_memory[0] = 32'h00000293; SYSTEM_RAM_INST.bram_memory[1] = 32'h00100313;
-            SYSTEM_RAM_INST.bram_memory[2] = 32'h00b00393; SYSTEM_RAM_INST.bram_memory[3] = 32'h006282b3;
-            SYSTEM_RAM_INST.bram_memory[4] = 32'h00130313; SYSTEM_RAM_INST.bram_memory[5] = 32'hfe736ee3;
-            SYSTEM_RAM_INST.bram_memory[6] = 32'h80000537; SYSTEM_RAM_INST.bram_memory[7] = 32'h10552023;
-            SYSTEM_RAM_INST.bram_memory[8] = 32'h400065b7; SYSTEM_RAM_INST.bram_memory[9] = 32'h0055a223;
-            SYSTEM_RAM_INST.bram_memory[10] = 32'h0000006f;
-            force CPU_CORE.pc_reg = 32'h8000_0000;
-        end
-    end
-
     initial begin
         $display("===============================================================");
         $display("   STARTING SOC MAIN FLOW TEST (BOOT -> FLASH -> RAM -> EXEC)  ");
@@ -305,30 +342,40 @@ module tb_soc_main_flow();
         phase = 1;
         $display("[PHASE 1] System Reset...");
         wait(rst_n == 1);
+        #100;
         $display("          [PASS] Reset Released.");
         
         phase = 2;
-        $display("[PHASE 2] CPU fetching Boot ROM. Waiting for jump to RAM (0x8000_0000)...");
-        wait(CPU_CORE.pc_reg == 32'h8000_0000);
+        $display("[PHASE 2] Waiting for CPU to jump to RAM (0x8000_0000)...");
+        // Chờ cho đến khi PC thoát khỏi vùng Boot ROM (0x0000_1000)
+        wait(CPU_CORE.pc_reg >= 32'h8000_0000);
         $display("          [PASS] Boot successful! Jumped to Main RAM.");
 
         phase = 3;
-        $display("[PHASE 3] Executing Calculation Program (Sum 1 to 10) in RAM...");
+        $display("[PHASE 3] Executing Calculation Program (Sum 1 to 10)...");
+        // Chờ cho đến khi thanh ghi t0 (rf_main[5]) đạt giá trị 55
+        wait(CPU_CORE.RF.rf_main[5] == 32'd55);
+        $display("          [PASS] Calculation completed. Sum = 55.");
         
         phase = 4;
-        $display("[PHASE 4] Write result to RAM");
-        wait(s1_awvalid && s1_awaddr == 32'h8000_0100);
-        wait(s1_wvalid);
-        if (s1_wdata == 32'd55) $display("          [PASS] RAM Write detected! Result = %0d", s1_wdata);
-        else $display("          [FAIL] RAM Write Result = %0d", s1_wdata);
+        $display("[PHASE 4] Monitoring RAM Write at 0x8000_0100...");
+        // Chờ tín hiệu ghi vào RAM của Data Cache
+        wait(s1_wvalid && s1_awaddr == 32'h8000_0100);
+        if (s1_wdata == 32'd55) 
+            $display("          [PASS] RAM Write Result matched: %0d", s1_wdata);
+        else 
+            $display("          [FAIL] RAM Write Result mismatch: %0d", s1_wdata);
 
         phase = 5;
         $display("[PHASE 5] Waiting for GPIO LED Output...");
         wait(gpio_out == 32'd55);
-        $display("          [PASS] GPIO Output matched! LED simulated ON (Result = 55).");
+        $display("          [PASS] GPIO Output matched! LED Result = 55.");
         
+        // Kết thúc mô phỏng thay vì để j . chạy mãi
+        #200;
         $display("===============================================================");
-        $display("   TEST FINISHED: ALL PHASES PASSED SUCCESSFULLY!");
+        $display("   TEST FINISHED: ALL PHASES PASSED SUCCESSFULLY!             ");
+        $display("   Time: %t", $time);
         $display("===============================================================");
         $finish;
     end

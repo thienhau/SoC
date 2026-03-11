@@ -256,12 +256,13 @@ module data_cache (
 
         case (state)
             IDLE: begin
-                // BỘ LỌC CDC CHỐNG TREO: Chờ tín hiệu valid cũ hạ hẳn xuống mới làm việc tiếp
-                if ((cpu_read_req || cpu_write_req) && (mem_read_valid || mem_write_back_valid)) begin
-                    dcache_stall = 1'b1;
-                    next_state   = IDLE;
+                // // BỘ LỌC CDC CHỐNG TREO: Chờ tín hiệu valid cũ hạ hẳn xuống mới làm việc tiếp
+                // if ((cpu_read_req || cpu_write_req) && (mem_read_valid || mem_write_back_valid)) begin
+                //     dcache_stall = 1'b1;
+                //     next_state   = IDLE;
                 
-                end else if (cpu_read_req) begin
+                // end else 
+                if (cpu_read_req) begin
                     if (dcache_hit) begin
                         case (target_way)
                             2'd0: cpu_read_data = read_data_with_size(d1, mem_size, byte_offset, mem_unsigned);
