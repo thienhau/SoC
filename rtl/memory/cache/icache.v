@@ -133,15 +133,17 @@ module instruction_cache (
                 valid2[i] <= 1'b0; 
                 plru[i]   <= 1'b0; 
             end
-        end else if (flush) begin
-            // Khi có flush, hủy bỏ dữ liệu đang nạp dở và về IDLE
-            state <= IDLE;
-            fetch_buffer <= 64'b0;
-            for (i=0; i<16; i=i+1) begin 
-                valid1[i] <= 1'b0;
-                valid2[i] <= 1'b0; 
-            end
-        end else begin
+        end 
+        // else if (flush) begin
+        //     // Khi có flush, hủy bỏ dữ liệu đang nạp dở và về IDLE
+        //     state <= IDLE;
+        //     fetch_buffer <= 64'b0;
+        //     for (i=0; i<16; i=i+1) begin 
+        //         valid1[i] <= 1'b0;
+        //         valid2[i] <= 1'b0; 
+        //     end
+        // end 
+        else begin
             state <= next_state;
 
             // Cập nhật PLRU khi CPU đọc trúng (Hit)
@@ -181,13 +183,13 @@ module instruction_cache (
         m_axi_araddr  = {tag, index, 3'b000}; // Luôn căn lề 8 byte
         m_axi_rready  = 1'b0;
 
-        if (flush) begin
-            // Khi flush: Ép dừng Bus, báo Stall và ép trạng thái về IDLE
-            icache_stall  = 1'b1;
-            m_axi_arvalid = 1'b0;
-            m_axi_rready  = 1'b0;
-            next_state    = IDLE;
-        end else begin
+        // if (flush) begin
+        //     // Khi flush: Ép dừng Bus, báo Stall và ép trạng thái về IDLE
+        //     icache_stall  = 1'b1;
+        //     m_axi_arvalid = 1'b0;
+        //     m_axi_rready  = 1'b0;
+        //     next_state    = IDLE;
+        // end else begin
             case (state)
                 IDLE: begin
                     if (cpu_read_req) begin
@@ -243,6 +245,6 @@ module instruction_cache (
                 default: next_state = IDLE;
             endcase
         end
-    end
+    // end
 
 endmodule

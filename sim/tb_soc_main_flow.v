@@ -17,31 +17,42 @@ module mock_spi_flash (
 
     initial begin
         // Khởi tạo mã máy tính tổng 1 đến 10.
-        // axi_spi_flash.v nhận bit MSB trước nên ta phải đảo byte thành Big-Endian trong array giả lập.
-        // Lệnh: li t0, 0 (00000293)
-        flash_mem[0]=8'h00; flash_mem[1]=8'h00; flash_mem[2]=8'h02; flash_mem[3]=8'h93;
-        // Lệnh: li t1, 1 (00100313)
-        flash_mem[4]=8'h00; flash_mem[5]=8'h10; flash_mem[6]=8'h03; flash_mem[7]=8'h13;
-        // Lệnh: li t2, 11 (00b00393)
-        flash_mem[8]=8'h00; flash_mem[9]=8'h0b; flash_mem[10]=8'h00; flash_mem[11]=8'h39; // Sửa lại đúng mã li t2,11: 00b00393 -> 00 0b 00 39
-        flash_mem[8]=8'h00; flash_mem[9]=8'hb0; flash_mem[10]=8'h03; flash_mem[11]=8'h93;
-        // Lệnh: add t0, t0, t1 (006282b3)
-        flash_mem[12]=8'h00; flash_mem[13]=8'h62; flash_mem[14]=8'h82; flash_mem[15]=8'hb3;
-        // Lệnh: addi t1, t1, 1 (00130313)
-        flash_mem[16]=8'h00; flash_mem[17]=8'h13; flash_mem[18]=8'h03; flash_mem[19]=8'h13;
-        // Lệnh: bltu t1, t2, -4 (fe736ee3)
-        flash_mem[20]=8'hfe; flash_mem[21]=8'h73; flash_mem[22]=8'h6e; flash_mem[23]=8'he3;
-        // Lệnh: lui a0, 0x80000 (80000537)
-        flash_mem[24]=8'h80; flash_mem[25]=8'h00; flash_mem[26]=8'h05; flash_mem[27]=8'h37;
-        // Lệnh: sw t0, 256(a0) (10552023)
-        flash_mem[28]=8'h10; flash_mem[29]=8'h55; flash_mem[30]=8'h20; flash_mem[31]=8'h23;
-        // Lệnh: lui a1, 0x40006 (400065b7)
-        flash_mem[32]=8'h40; flash_mem[33]=8'h00; flash_mem[34]=8'h65; flash_mem[35]=8'hb7;
-        // Lệnh: sw t0, 4(a1) (0055a223)
-        flash_mem[36]=8'h00; flash_mem[37]=8'h55; flash_mem[38]=8'ha2; flash_mem[39]=8'h23;
-        // Lệnh: j . (0000006f)
-        flash_mem[40]=8'h00; flash_mem[41]=8'h00; flash_mem[42]=8'h00; flash_mem[43]=8'h6f;
+        // Chú ý: Đã chuyển đổi li -> addi (addi rd, x0, imm)
         
+        // 1. Lệnh: addi t0, x0, 0 (Thay cho li t0, 0) -> Mã máy: 00000293
+        flash_mem[0]=8'h00; flash_mem[1]=8'h00; flash_mem[2]=8'h02; flash_mem[3]=8'h93;
+
+        // 2. Lệnh: addi t1, x0, 1 (Thay cho li t1, 1) -> Mã máy: 00100313
+        flash_mem[4]=8'h00; flash_mem[5]=8'h10; flash_mem[6]=8'h03; flash_mem[7]=8'h13;
+
+        // 3. Lệnh: addi t2, x0, 11 (Thay cho li t2, 11) -> Mã máy: 00b00393
+        // Giải mã: imm=11(00b), rs1=0, func3=0, rd=x7(t2), opcode=13
+        flash_mem[8]=8'h00; flash_mem[9]=8'hb0; flash_mem[10]=8'h03; flash_mem[11]=8'h93;
+
+        // 4. Lệnh: add t0, t0, t1 -> Mã máy: 006282b3
+        flash_mem[12]=8'h00; flash_mem[13]=8'h62; flash_mem[14]=8'h82; flash_mem[15]=8'hb3;
+
+        // 5. Lệnh: addi t1, t1, 1 -> Mã máy: 00130313
+        flash_mem[16]=8'h00; flash_mem[17]=8'h13; flash_mem[18]=8'h03; flash_mem[19]=8'h13;
+
+        // 6. Lệnh: bltu t1, t2, -8 (Quay lại lệnh add t0, t0, t1 tại byte 12)
+        flash_mem[20]=8'hfe; flash_mem[21]=8'h73; flash_mem[22]=8'h64; flash_mem[23]=8'he3;
+
+        // 7. Lệnh: lui a0, 0x80000 -> Mã máy: 80000537
+        flash_mem[24]=8'h80; flash_mem[25]=8'h00; flash_mem[26]=8'h05; flash_mem[27]=8'h37;
+
+        // 8. Lệnh: sw t0, 256(a0) -> Mã máy: 10552023
+        flash_mem[28]=8'h10; flash_mem[29]=8'h55; flash_mem[30]=8'h20; flash_mem[31]=8'h23;
+
+        // 9. Lệnh: lui a1, 0x40006 -> Mã máy: 400065b7
+        flash_mem[32]=8'h40; flash_mem[33]=8'h00; flash_mem[34]=8'h65; flash_mem[35]=8'hb7;
+
+        // 10. Lệnh: sw t0, 4(a1) -> Mã máy: 0055a223
+        flash_mem[36]=8'h00; flash_mem[37]=8'h55; flash_mem[38]=8'ha2; flash_mem[39]=8'h23;
+
+        // 11. Lệnh: j . (Nhảy tại chỗ vô tận) -> Mã máy: 0000006f
+        flash_mem[40]=8'h00; flash_mem[41]=8'h00; flash_mem[42]=8'h00; flash_mem[43]=8'h6f;
+
         bit_cnt = 0; state = 0; miso = 1'bz;
     end
 
@@ -49,7 +60,7 @@ module mock_spi_flash (
     always @(posedge sck) begin
         if (!cs_n) begin
             shift_reg = {shift_reg[30:0], mosi};
-            bit_cnt = bit_cnt + 1;
+            if (state != 2) bit_cnt = bit_cnt + 1;
             if (state == 0 && bit_cnt == 8) begin state = 1; bit_cnt = 0; end 
             else if (state == 1 && bit_cnt == 24) begin addr = shift_reg[23:0]; state = 2; bit_cnt = 0; end
         end
@@ -73,8 +84,8 @@ module tb_soc_main_flow();
     always #5 clk_core = ~clk_core; // 100MHz
     always #10 clk_bus = ~clk_bus;  // 50MHz
 
-    wire [31:0] ic_araddr, m0_araddr, bus_m0_araddr, m1_araddr, m1_awaddr, m1_wdata, m1_rdata, bus_m0_rdata;
-    wire [31:0] s0_araddr, s1_awaddr, s1_araddr, s1_wdata, s1_rdata, s0_rdata;
+    wire [31:0] ic_araddr, m0_araddr, bus_m0_araddr, m1_araddr, m1_awaddr, m1_wdata, m1_rdata, bus_m0_rdata, m0_rdata;
+    wire [31:0] s0_araddr, s0_rdata, s1_awaddr, s1_araddr, s1_wdata, s1_rdata;
     wire [31:0] s2_awaddr, s2_araddr, s2_wdata, s2_rdata, s3_araddr, s3_rdata;
     wire [7:0]  ic_arlen, m0_arlen, s1_arlen;
     wire [3:0]  m1_wstrb, s1_wstrb, s2_wstrb;
@@ -90,7 +101,7 @@ module tb_soc_main_flow();
     wire s2_awvalid, s2_awready, s2_wvalid, s2_wready, s2_bvalid, s2_bready, s2_arvalid, s2_arready, s2_rvalid, s2_rready;
     wire s3_arvalid, s3_arready, s3_rvalid, s3_rready;
 
-    wire [31:0] cpu_ic_addr, cpu_ic_rdata, cpu_dc_addr, cpu_dc_wdata, cpu_dc_rdata;
+    wire [31:0] cpu_ic_addr, cpu_ic_rdata, cpu_dc_addr, cpu_dc_wdata, cpu_dc_rdata, cpu_resp_val;
     wire cpu_ic_req, cpu_ic_hit, cpu_ic_stall, cpu_dc_rd, cpu_dc_wr, cpu_dc_hit, cpu_dc_stall, cpu_mem_unsigned, cpu_flush;
     wire [1:0] cpu_dc_size;
     wire [31:0] dc_cdc_addr, dc_cdc_wdata, dc_cdc_rdata, dc_bus_addr, dc_bus_wdata, dc_bus_rdata;
@@ -124,13 +135,13 @@ module tb_soc_main_flow();
     );
 
     // Mạch AXI-Lite Fake: Ép ROM/Flash trả về rlast để ICache không bị kẹt R_WAIT_2
-    assign ic_rlast = ic_rvalid; // Vì ROM chỉ trả 1 nhịp, ta ép rlast lên cùng lúc với rvalid
+    // assign ic_rlast = ic_rvalid; // Vì ROM chỉ trả 1 nhịp, ta ép rlast lên cùng lúc với rvalid
 
     // Các kết nối bus khác giữ nguyên nhưng đảm bảo nối ARREADY/RVALID của ROM vào I_CACHE
     axi4_read_cdc ICACHE_CDC (
         .clk_core(clk_core), .rst_core_n(rst_n),
         .s_axi_araddr(ic_araddr), .s_axi_arlen(ic_arlen), .s_axi_arsize(ic_arsize), .s_axi_arburst(ic_arburst), .s_axi_arvalid(ic_arvalid), .s_axi_arready(ic_arready),
-        .s_axi_rdata(ic_bus_rdata), .s_axi_rresp(ic_rresp), .s_axi_rlast(), .s_axi_rvalid(ic_rvalid), .s_axi_rready(ic_rready),
+        .s_axi_rdata(ic_bus_rdata), .s_axi_rresp(ic_rresp), .s_axi_rlast(ic_rlast), .s_axi_rvalid(ic_rvalid), .s_axi_rready(ic_rready),
         .clk_bus(clk_bus), .rst_bus_n(rst_n),
         .m_axi_araddr(m0_araddr), .m_axi_arlen(m0_arlen), .m_axi_arsize(m0_arsize), .m_axi_arburst(m0_arburst), .m_axi_arvalid(m0_arvalid), .m_axi_arready(m0_arready),
         .m_axi_rdata(m0_rdata), .m_axi_rresp(m0_rresp), .m_axi_rlast(m0_rlast), .m_axi_rvalid(m0_rvalid), .m_axi_rready(m0_rready)
@@ -179,7 +190,7 @@ module tb_soc_main_flow();
     );
 
     axi_master_adapter #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) M1_DCACHE_ADAPT (
-        .clk(clk_bus), .rst_n(rst_n), .cpu_read_req(dc_bus_req && !dc_bus_is_write), .cpu_write_req(dc_bus_req && dc_bus_is_write), .cpu_addr(dc_bus_addr), .cpu_wdata(dc_bus_wdata), .cpu_mem_size(dc_bus_size), .cpu_rdata(dc_bus_rdata), .cpu_ready(dc_bus_ready),
+        .clk(clk_bus), .rst_n(rst_n), .cpu_read_req(dc_bus_req && !dc_bus_is_write), .cpu_write_req(dc_bus_req && dc_bus_is_write), .cpu_addr(dc_bus_addr), .cpu_wdata(dc_bus_wdata), .cpu_mem_size(dc_bus_size), .cpu_rdata(dc_bus_rdata), .cpu_ready(dc_bus_ready), .cpu_resp_val(dc_bus_resp_val),
         .m_axi_awaddr(m1_awaddr), .m_axi_awprot(), .m_axi_awvalid(m1_awvalid), .m_axi_awready(m1_awready), .m_axi_wdata(m1_wdata), .m_axi_wstrb(m1_wstrb), .m_axi_wvalid(m1_wvalid), .m_axi_wready(m1_wready), .m_axi_bresp(m1_bresp), .m_axi_bvalid(m1_bvalid), .m_axi_bready(m1_bready),
         .m_axi_araddr(m1_araddr), .m_axi_arprot(), .m_axi_arvalid(m1_arvalid), .m_axi_arready(m1_arready), .m_axi_rdata(m1_rdata), .m_axi_rresp(m1_rresp), .m_axi_rvalid(m1_rvalid), .m_axi_rready(m1_rready)
     );
@@ -305,6 +316,7 @@ module tb_soc_main_flow();
         $display("[PHASE 3] Executing Calculation Program (Sum 1 to 10) in RAM...");
         
         phase = 4;
+        $display("[PHASE 4] Write result to RAM");
         wait(s1_awvalid && s1_awaddr == 32'h8000_0100);
         wait(s1_wvalid);
         if (s1_wdata == 32'd55) $display("          [PASS] RAM Write detected! Result = %0d", s1_wdata);

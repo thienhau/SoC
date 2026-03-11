@@ -15,6 +15,7 @@ module axi_master_adapter #(
     input  wire [1:0]             cpu_mem_size,  // 00: Word, 01: Half, 10: Byte
     output reg  [DATA_WIDTH-1:0]  cpu_rdata,
     output reg                    cpu_ready,     // Trả về 1 khi rảnh, 0 khi đang kẹt Bus
+    output reg                    cpu_resp_val,
 
     // --- AXI4-Lite Master Interface ---
     output reg  [ADDR_WIDTH-1:0]  m_axi_awaddr,
@@ -66,6 +67,7 @@ module axi_master_adapter #(
         if (!rst_n) begin
             state         <= ST_IDLE;
             cpu_ready     <= 1'b1;
+            cpu_resp_val  <= 1'b0;
             cpu_rdata     <= 32'b0;
             m_axi_awvalid <= 1'b0;
             m_axi_wvalid  <= 1'b0;
@@ -75,6 +77,7 @@ module axi_master_adapter #(
             m_axi_awprot  <= 3'b000;
             m_axi_arprot  <= 3'b000;
         end else begin
+            cpu_resp_val <= 1'b0;
             case (state)
                 ST_IDLE: begin
                     cpu_ready <= 1'b1;
@@ -109,6 +112,7 @@ module axi_master_adapter #(
                     if (m_axi_bvalid && m_axi_bready) begin
                         m_axi_bready <= 1'b0;
                         cpu_ready    <= 1'b1; // Giải phóng CPU
+                        cpu_resp_val <= 1'b1;
                         state        <= ST_IDLE;
                     end
                 end
@@ -126,6 +130,7 @@ module axi_master_adapter #(
                         cpu_rdata    <= m_axi_rdata;
                         m_axi_rready <= 1'b0;
                         cpu_ready    <= 1'b1; // Giải phóng CPU
+                        cpu_resp_val <= 1'b1;
                         state        <= ST_IDLE;
                     end
                 end
