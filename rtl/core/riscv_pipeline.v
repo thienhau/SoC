@@ -4,7 +4,9 @@ module riscv_pipeline (
     input clk,
     input reset_n,  // Reset mức thấp
     input riscv_start,
-    input external_irq_in,
+    input meip_i, // Machine External Interrupt (Từ PLIC)
+    input msip_i, // Machine Software Interrupt (Từ CLINT)
+    input mtip_i, // Machine Timer Interrupt (Từ CLINT)
     input [31:0] reset_vector_in,  // Sửa: Thêm chân reset vector
     output reg riscv_done,
     
@@ -197,12 +199,24 @@ module riscv_pipeline (
     wire [31:0] mie_val;
     wire mstatus_mie_val;
 
-    wire is_external_interrupt = external_irq_in & mie_val[11] & mstatus_mie_val;
-    wire trap_enter = ex_mem_ecall | ex_mem_ebreak | is_external_interrupt;
+    // 1. Phân loại và kiểm tra cờ Enable cho từng loại ngắt
+    // mie_val[11] = MEIE, mie_val[7] = MTIE, mie_val[3] = MSIE
+    wire is_external_irq = meip_i & mie_val[11] & mstatus_mie_val;
+    wire is_software_irq = msip_i & mie_val[3]  & mstatus_mie_val;
+    wire is_timer_irq    = mtip_i & mie_val[7]  & mstatus_mie_val;
+
+    // Tổng hợp tín hiệu báo có ngắt
+    wire trap_interrupt = is_external_irq | is_software_irq | is_timer_irq;
+
+    // Báo cho PCU và CSR biết có Trap (Exception hoặc Interrupt)
+    wire trap_enter = ex_mem_ecall | ex_mem_ebreak | trap_interrupt;
     
-    wire [31:0] trap_cause = is_external_interrupt ? 32'h8000000b :
-                             ex_mem_ecall           ? 32'd11       :
-                             ex_mem_ebreak          ? 32'd3        : 32'd0;
+    // 2. Logic ưu tiên (Priority): External > Software > Timer
+    wire [31:0] trap_cause = is_external_irq ? 32'h8000000b : // Code 11 + bit 31
+                             is_software_irq ? 32'h80000003 : // Code 3  + bit 31
+                             is_timer_irq    ? 32'h80000007 : // Code 7  + bit 31
+                             ex_mem_ecall    ? 32'd11       : // Ecall from M-mode
+                             ex_mem_ebreak   ? 32'd3        : 32'd0;
 
     wire [31:0] mtvec_pc;
     wire [31:0] mepc_pc;
@@ -216,6 +230,9 @@ module riscv_pipeline (
     csr_register_file CSR_RF (
         .clk(clk),
         .reset_n(reset_n),
+        .meip_i(meip_i),
+        .msip_i(msip_i),
+        .mtip_i(mtip_i),
         .csr_addr(id_ex_csr_addr),
         .csr_read_data(csr_read_data_raw),
         .csr_write_addr(ex_mem_csr_addr),

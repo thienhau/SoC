@@ -73,6 +73,9 @@ endmodule
 module csr_register_file (
     input clk,
     input reset_n,
+    input meip_i, // External Interrupt Pending
+    input msip_i, // Software Interrupt Pending
+    input mtip_i, // Timer Interrupt Pending
     input [11:0] csr_addr,
     output reg [31:0] csr_read_data,
     input [11:0] csr_write_addr,
@@ -105,7 +108,7 @@ module csr_register_file (
     reg [31:0] mepc;
     reg [31:0] mcause;
     reg [31:0] mtval;
-    reg [31:0] mip;
+    wire [31:0] mip_val = {20'd0, meip_i, 3'd0, mtip_i, 3'd0, msip_i, 3'd0};
 
     reg [63:0] mcycle;
     reg [63:0] minstret;
@@ -129,7 +132,7 @@ module csr_register_file (
             12'h341: csr_read_data = mepc;
             12'h342: csr_read_data = mcause;
             12'h343: csr_read_data = mtval;
-            12'h344: csr_read_data = mip;
+            12'h344: csr_read_data = mip_val;
             12'hB00, 12'hC00, 12'hC01: csr_read_data = mcycle[31:0];
             12'hB80, 12'hC80, 12'hC81: csr_read_data = mcycle[63:32];
             12'hB02, 12'hC02:          csr_read_data = minstret[31:0];
@@ -147,7 +150,6 @@ module csr_register_file (
             mepc     <= 32'b0;
             mcause   <= 32'b0;
             mtval    <= 32'b0;
-            mip      <= 32'b0;
             mcycle   <= 64'b0;
             minstret <= 64'b0;
         end else begin
