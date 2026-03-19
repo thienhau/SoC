@@ -85,16 +85,27 @@ module axi_spi_flash #(
                 end
                 SETUP: begin
                     spi_cs_n <= 1'b0;
+                    sck_en   <= 1'b1; // SỬA Ở ĐÂY: Khởi tạo bằng 1 để nhịp tiếp theo nhảy thẳng vào Cạnh Lên
                     state    <= SHIFT;
                 end
+                
                 SHIFT: begin
-                    if (!sck_en) begin
-                        spi_sck <= 1'b0; sck_en <= 1'b1;
-                    end else begin
-                        spi_sck <= 1'b1; sck_en <= 1'b0;
+                    if (!sck_en) begin // CẠNH XUỐNG (Falling Edge)
+                        spi_sck <= 1'b0;
+                        sck_en  <= 1'b1;
+                        
+                        // SỬA Ở ĐÂY: Trừ bit_cnt ở cạnh xuống để dữ liệu (mosi) thay đổi an toàn
+                        bit_cnt <= bit_cnt - 1; 
+                        
+                    end else begin     // CẠNH LÊN (Rising Edge)
+                        spi_sck <= 1'b1;
+                        sck_en  <= 1'b0;
+                        
+                        // Đọc tín hiệu miso từ Flash vào nửa sau
                         if (bit_cnt < 32) shift_reg[bit_cnt] <= spi_miso;
+                        
                         if (bit_cnt == 0) state <= DONE;
-                        else bit_cnt <= bit_cnt - 1;
+                        // (Tuyệt đối KHÔNG có lệnh trừ bit_cnt ở đây nữa)
                     end
                 end
                 DONE: begin

@@ -31,7 +31,7 @@ module apb_interconnect #(
     input  wire                   s0_pslverr,
 
     // =========================================================================
-    // SLAVE 1: PLIC (0x4000_1000)
+    // SLAVE 1: WATCHDOG (0x4000_1000)
     // =========================================================================
     output wire                   s1_psel,
     output wire [ADDR_WIDTH-1:0]  s1_paddr,

@@ -85,7 +85,7 @@ module main_control_unit (
                 alu_op = 2'b00;
                 case (funct3)
                     3'b000: begin
-                        mem_size = 2'b10;
+                        mem_size = 2'b00;
                         mem_unsigned = 1'b0;
                     end
                     3'b001: begin
@@ -93,11 +93,11 @@ module main_control_unit (
                         mem_unsigned = 1'b0;
                     end
                     3'b010: begin
-                        mem_size = 2'b00;
+                        mem_size = 2'b10;
                         mem_unsigned = 1'b0;
                     end
                     3'b100: begin
-                        mem_size = 2'b10;
+                        mem_size = 2'b00;
                         mem_unsigned = 1'b1;
                     end
                     3'b101: begin
@@ -105,7 +105,7 @@ module main_control_unit (
                         mem_unsigned = 1'b1;
                     end
                     default: begin
-                        mem_size = 2'b00;
+                        mem_size = 2'b10;
                         mem_unsigned = 1'b0;
                     end
                 endcase
@@ -116,10 +116,10 @@ module main_control_unit (
                 mem_write = 1'b1;
                 alu_op = 2'b00;
                 case (funct3)
-                    3'b000: mem_size = 2'b10;
+                    3'b000: mem_size = 2'b00;
                     3'b001: mem_size = 2'b01;
-                    3'b010: mem_size = 2'b00;
-                    default: mem_size = 2'b00;
+                    3'b010: mem_size = 2'b10;
+                    default: mem_size = 2'b10;
                 endcase
             end
             
@@ -159,7 +159,7 @@ module main_control_unit (
                 f_mem_to_reg = 1'b1;
                 f_reg_write = 1'b1;
                 alu_op = 2'b00;
-                mem_size = 2'b00;
+                mem_size = 2'b10;
             end
             
             7'b0100111: begin
@@ -167,7 +167,7 @@ module main_control_unit (
                 mem_write = 1'b1;
                 f_mem_write = 1'b1;
                 alu_op = 2'b00;
-                mem_size = 2'b00;
+                mem_size = 2'b10;
             end
             
             7'b1010011: begin

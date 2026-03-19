@@ -76,11 +76,6 @@ module instruction_cache (
     output reg         m_axi_rready
 );
 
-    // Giải mã địa chỉ
-    wire [24:0] tag         = cpu_addr[31:7];
-    wire [3:0]  index       = cpu_addr[6:3];
-    wire        word_offset = cpu_addr[2];
-
     wire [63:0] data1_out, data2_out;
     wire [24:0] tag1_out, tag2_out;
     
@@ -103,6 +98,13 @@ module instruction_cache (
     reg [2:0] state, next_state;
     reg [1:0] way_update;
     reg [63:0] fetch_buffer;
+    reg [31:0] miss_addr;
+
+    wire [31:0] current_addr = (state == IDLE) ? cpu_addr : miss_addr;
+
+    wire [24:0] tag         = current_addr[31:7];
+    wire [3:0]  index       = current_addr[6:3];
+    wire        word_offset = current_addr[2];
     
     // Khởi tạo RAM con
     icache_data_ram DATA_RAM (
@@ -133,15 +135,17 @@ module instruction_cache (
                 valid2[i] <= 1'b0; 
                 plru[i]   <= 1'b0; 
             end
-        end else if (flush) begin
-            // Khi có flush, hủy bỏ dữ liệu đang nạp dở và về IDLE
-            state <= IDLE;
-            fetch_buffer <= 64'b0;
-            for (i=0; i<16; i=i+1) begin 
-                valid1[i] <= 1'b0;
-                valid2[i] <= 1'b0; 
-            end
-        end else begin
+        end 
+        // else if (flush) begin
+        //     // Khi có flush, hủy bỏ dữ liệu đang nạp dở và về IDLE
+        //     state <= IDLE;
+        //     fetch_buffer <= 64'b0;
+        //     for (i=0; i<16; i=i+1) begin 
+        //         valid1[i] <= 1'b0;
+        //         valid2[i] <= 1'b0; 
+        //     end
+        // end 
+        else begin
             state <= next_state;
 
             // Cập nhật PLRU khi CPU đọc trúng (Hit)
@@ -169,6 +173,14 @@ module instruction_cache (
         end
     end
 
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            miss_addr <= 32'b0;
+        end else if (state == IDLE && cpu_read_req && !icache_hit) begin
+            miss_addr <= cpu_addr;
+        end
+    end
+
     // Logic tổ hợp điều khiển FSM và tín hiệu Bus
     always @(*) begin
         // Giá trị mặc định
@@ -181,13 +193,13 @@ module instruction_cache (
         m_axi_araddr  = {tag, index, 3'b000}; // Luôn căn lề 8 byte
         m_axi_rready  = 1'b0;
 
-        if (flush) begin
-            // Khi flush: Ép dừng Bus, báo Stall và ép trạng thái về IDLE
-            icache_stall  = 1'b1;
-            m_axi_arvalid = 1'b0;
-            m_axi_rready  = 1'b0;
-            next_state    = IDLE;
-        end else begin
+        // if (flush) begin
+        //     // Khi flush: Ép dừng Bus, báo Stall và ép trạng thái về IDLE
+        //     icache_stall  = 1'b1;
+        //     m_axi_arvalid = 1'b0;
+        //     m_axi_rready  = 1'b0;
+        //     next_state    = IDLE;
+        // end else begin
             case (state)
                 IDLE: begin
                     if (cpu_read_req) begin
@@ -243,6 +255,6 @@ module instruction_cache (
                 default: next_state = IDLE;
             endcase
         end
-    end
+    // end
 
 endmodule
