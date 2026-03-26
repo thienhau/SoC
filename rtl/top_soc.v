@@ -99,6 +99,7 @@ module top_soc (
     wire        cpu_dc_rd, cpu_dc_wr, cpu_dc_hit, cpu_dc_stall, cpu_mem_unsigned;
     wire [31:0] cpu_dc_addr, cpu_dc_wdata, cpu_dc_rdata;
     wire [1:0]  cpu_dc_size;
+    wire dcache_bus_busy;
 
     // Caches <-> CDC Bridges <-> Bus
     wire        dc_cdc_rd, dc_cdc_wr, dc_cdc_ready, dc_cdc_resp_val;
@@ -250,17 +251,23 @@ module top_soc (
     // =========================================================================
     // 7. CPU CORE VÀ CACHES
     // =========================================================================
+    
+    wire        bpu_predict_taken;
+    wire        bpu_btb_hit;
+    wire [31:0] bpu_predict_target;
+
     riscv_pipeline CPU_CORE (
         .clk(clk_cpu_gated), .reset_n(core_rst_n), .riscv_start(1'b1),
         .meip_i(core_meip), .msip_i(core_msip), .mtip_i(core_mtip), // Cập nhật cổng ngắt chuẩn RISC-V
         .reset_vector_in(sys_reset_vector), .wfi_sleep_out(cpu_wfi_sleep), .riscv_done(riscv_done),
-        .icache_read_req(cpu_ic_req), .icache_addr(cpu_ic_addr), .icache_read_data(cpu_ic_rdata), .icache_hit(cpu_ic_hit), .icache_stall(cpu_ic_stall),
+        .icache_read_req(cpu_ic_req), .icache_addr(cpu_ic_addr), .icache_read_data(cpu_ic_rdata), .icache_hit(cpu_ic_hit), .icache_stall(cpu_ic_stall),.bpu_predict_taken_out(bpu_predict_taken), .bpu_btb_hit_out(bpu_btb_hit), .bpu_predict_target_out(bpu_predict_target),
         .dcache_read_req(cpu_dc_rd), .dcache_write_req(cpu_dc_wr), .dcache_addr(cpu_dc_addr), .dcache_write_data(cpu_dc_wdata), .dcache_read_data(cpu_dc_rdata), .dcache_hit(cpu_dc_hit), .dcache_stall(cpu_dc_stall),
         .flush_top(cpu_flush), .mem_size_top(cpu_dc_size), .mem_unsigned_top(cpu_mem_unsigned)
     );
 
     instruction_cache I_CACHE (
-        .clk(clk_core), .rst_n(core_rst_n), .flush(cpu_flush),
+        .clk(clk_core), .rst_n(core_rst_n), .flush(cpu_flush),.dcache_busy(dcache_bus_busy),
+        .predict_taken(bpu_predict_taken), .btb_hit(bpu_btb_hit), .predict_target(bpu_predict_target),
         .cpu_read_req(cpu_ic_req), .cpu_addr(cpu_ic_addr), .cpu_read_data(cpu_ic_rdata), .icache_hit(cpu_ic_hit), .icache_stall(cpu_ic_stall),
         .m_axi_araddr(ic_araddr), .m_axi_arlen(ic_arlen), .m_axi_arsize(ic_arsize), .m_axi_arburst(ic_arburst), .m_axi_arvalid(ic_arvalid), .m_axi_arready(ic_arready),
         .m_axi_rdata(ic_rdata), .m_axi_rresp(ic_rresp), .m_axi_rlast(ic_rlast), .m_axi_rvalid(ic_rvalid), .m_axi_rready(ic_rready)
@@ -269,7 +276,7 @@ module top_soc (
     data_cache D_CACHE (
         .clk(clk_core), .rst_n(core_rst_n),
         .cpu_read_req(cpu_dc_rd), .cpu_write_req(cpu_dc_wr), .cpu_addr(cpu_dc_addr), .cpu_write_data(cpu_dc_wdata), .cpu_read_data(cpu_dc_rdata),
-        .mem_unsigned(cpu_mem_unsigned), .mem_size(cpu_dc_size), .dcache_hit(cpu_dc_hit), .dcache_stall(cpu_dc_stall),
+        .mem_unsigned(cpu_mem_unsigned), .mem_size(cpu_dc_size), .dcache_hit(cpu_dc_hit), .dcache_stall(cpu_dc_stall), .dcache_bus_busy(dcache_bus_busy),
         .mem_read_req(dc_cdc_rd), .mem_write_req(dc_cdc_wr), .mem_addr(dc_cdc_addr), .mem_write_data(dc_cdc_wdata), .mem_read_data(dc_cdc_rdata),
         .mem_read_ready(dc_cdc_ready), .mem_read_valid(dc_cdc_resp_val), .mem_write_ready(dc_cdc_ready), .mem_write_back_valid(dc_cdc_resp_val)
     );

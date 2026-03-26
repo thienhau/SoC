@@ -6,7 +6,7 @@
 module dcache_tag_ram (
     input  wire        clk,
     input  wire [3:0]  index,
-    input  wire [3:0]  write_en, // One-hot: [0]=Way1 ... [3]=Way4
+    input  wire [3:0]  write_en, // One-hot: [0]=Way1 ... [3]=Way4 ( chọn way để ghi)
     input  wire [25:0] write_tag,
     output wire [25:0] t1, 
     output wire [25:0] t2, 
@@ -63,32 +63,33 @@ module dcache_data_ram (
 endmodule
 
 // =============================================================================
-// MAIN MODULE: Data Cache Controller (Sửa thành WRITE-THROUGH chuẩn)
+// MAIN MODULE: Data Cache Controller
 // =============================================================================
 module data_cache (
     input  wire        clk, 
     input  wire        rst_n,          
-    input  wire        cpu_read_req, 
-    input  wire        cpu_write_req,
-    input  wire [31:0] cpu_addr,       
-    input  wire [31:0] mem_read_data,
-    input  wire [31:0] cpu_write_data,
+    input  wire        cpu_read_req, // cpu load 
+    input  wire        cpu_write_req, // cpu store 
+    input  wire [31:0] cpu_addr,       // địa chỉ load/store
+    input  wire [31:0] mem_read_data,  // dữ liệu đọc được
+    input  wire [31:0] cpu_write_data,  // dữ liệu store
     input  wire        mem_unsigned, 
     input  wire [1:0]  mem_size,
     input  wire        mem_read_ready,       
     input  wire        mem_read_valid, 
     input  wire        mem_write_ready,      
     input  wire        mem_write_back_valid,
-    output reg         mem_read_req, 
-    output reg         mem_write_req,
-    output reg  [31:0] mem_addr,       
-    output reg  [31:0] cpu_read_data,
-    output reg  [31:0] mem_write_data,
-    output reg         dcache_hit, 
-    output reg         dcache_stall
+    output reg         mem_read_req, // yêu cầu đọc ram
+    output reg         mem_write_req, // yêu cầu ghi vào ram
+    output reg  [31:0] mem_addr,       // địa chỉ truy cập ram
+    output reg  [31:0] cpu_read_data, // dữ liệu trả cho cpu
+    output reg  [31:0] mem_write_data, // dữ liệu muốn ghi xuống ram
+    output reg         dcache_hit,  // hit trong cache hoặc write buffer
+    output reg         dcache_stall,
+    output wire        dcache_bus_busy // dcache đang chiếm ram
 );
 
-    // --- CÁC HÀM XỬ LÝ SIZE GIỮ NGUYÊN NHƯ CŨ ---
+    // --- CÁC HÀM XỬ LÝ SIZE  ---
     function [31:0] read_data_with_size;
         input [31:0] data; input [1:0] size; input [1:0] offset; input unsigned_flag;
         reg   [31:0] result;
@@ -165,22 +166,152 @@ module data_cache (
     wire [3:0]  index       = cpu_addr[5:2];
     wire [1:0]  byte_offset = cpu_addr[1:0];
 
+    reg valid1[0:15], valid2[0:15], valid3[0:15], valid4[0:15];
+    reg [2:0] plru[0:15];
+
     wire [25:0] t1, t2, t3, t4;
     wire [31:0] d1, d2, d3, d4;
 
-    reg       valid1[0:15], valid2[0:15], valid3[0:15], valid4[0:15];
-    reg [2:0] plru[0:15];
-
-    parameter IDLE = 2'b00, MEM_READ = 2'b01, MEM_WRITE_BACK = 2'b10;
+    parameter IDLE = 2'b00, MEM_READ = 2'b01;
     reg [1:0] state, next_state;
+
+    wire cache_lookup_en = (state == IDLE); 
+
+    wire cache_hit_way0 = cache_lookup_en && valid1[index] && (t1 == tag);
+    wire cache_hit_way1 = cache_lookup_en && valid2[index] && (t2 == tag);
+    wire cache_hit_way2 = cache_lookup_en && valid3[index] && (t3 == tag);
+    wire cache_hit_way3 = cache_lookup_en && valid4[index] && (t4 == tag);
+
+    wire cache_array_hit = cache_hit_way0 | cache_hit_way1 | cache_hit_way2 | cache_hit_way3;
+
+    // các tín hiệu khi miss ( các tín hiệu cho hàm read/write data with size)
+    reg        miss_is_write; // miss của store hay load
+    reg [31:0] miss_addr; //địa chỉ miss
+    reg [31:0] miss_wdata;  // dữ liệu cần ghi ( nếu là miss store )
+    reg [1:0]  miss_size; 
+    reg        miss_unsigned;
+    reg [1:0]  miss_target_way; // way để thay sau khi lấy
+
+    wire [25:0] miss_tag         = miss_addr[31:6];
+    wire [3:0]  miss_index       = miss_addr[5:2];
+    wire [1:0]  miss_byte_offset = miss_addr[1:0];
+
+    wire [3:0]  cache_index     = (state == IDLE) ? index : miss_index;
+    wire [25:0] cache_write_tag = (state == IDLE) ? tag : miss_tag;
 
     reg [1:0]  target_way;
     reg [3:0]  way_write_en;
     reg [31:0] final_write_data;
-    reg        req_sent; 
+    reg        req_sent; // chống gửi lặp yêu cầu đọc trong state MEM_READ.
 
-    dcache_tag_ram TAGS (.clk(clk), .index(index), .write_en(way_write_en), .write_tag(tag), .t1(t1), .t2(t2), .t3(t3), .t4(t4));
-    dcache_data_ram DATA (.clk(clk), .index(index), .write_en(way_write_en), .write_data(final_write_data), .d1(d1), .d2(d2), .d3(d3), .d4(d4));
+    // =========================================================================
+    // CONSUMER FSM — Đẩy dữ liệu  từ buffer xuống ram
+    // =========================================================================
+    parameter CONS_IDLE = 1'b0, CONS_WRITE = 1'b1;
+    reg        cons_state, cons_next_state;
+    reg        cons_req_sent;   // AXI handshake tracker riêng cho Consumer
+    
+    wire main_using_bus = (state == MEM_READ);
+    wire cons_using_bus = (cons_state == CONS_WRITE);
+    assign dcache_bus_busy = main_using_bus || cons_using_bus;
+
+    // khởi tạo
+    dcache_tag_ram TAGS (.clk(clk), .index(cache_index), .write_en(way_write_en), .write_tag(cache_write_tag), .t1(t1), .t2(t2), .t3(t3), .t4(t4));
+    dcache_data_ram DATA (.clk(clk), .index(cache_index), .write_en(way_write_en), .write_data(final_write_data), .d1(d1), .d2(d2), .d3(d3), .d4(d4));
+
+    // =========================================================================
+    // WRITE BUFFER — dữ liệu cpu muốn ghi vào ram thì ghi vào đây để nó tự ghi xuống, cpu ko cần chờ
+    // =========================================================================
+    reg [63:0] wbuf_mem [0:3]; // 4 entry 64 bit
+    reg [2:0]  wbuf_wptr, wbuf_rptr; // 3 bit, bit đầu là vòng, 2 bit sau là entry
+    reg [3:0]  wbuf_valid;       // này để check valid lúc CPU miss mà nó đọc ở trong cái buffer này
+    
+    wire wbuf_full  = (wbuf_wptr[2] != wbuf_rptr[2]) && 
+                      (wbuf_wptr[1:0] == wbuf_rptr[1:0]);
+    wire wbuf_empty = (wbuf_wptr == wbuf_rptr);
+    
+    reg         wbuf_push; // enable ghi xuống
+    reg         wbuf_pop; // flag để báo đã nạp vào ram xong
+    reg  [63:0] wbuf_wdata;
+    wire [63:0] wbuf_rdata = wbuf_mem[wbuf_rptr[1:0]];
+    wire [31:0] wbuf_out_addr = wbuf_rdata[63:32];
+    wire [31:0] wbuf_out_data = wbuf_rdata[31:0];
+    
+    wire cpu_read_miss  = (state == IDLE) && cpu_read_req  && !wbuf_fwd_hit && !cache_array_hit;
+    wire cpu_write_miss = (state == IDLE) && cpu_write_req && !cache_array_hit && !wbuf_fwd_hit && (mem_size != 2'b10) && !wbuf_full;
+    wire pending_cpu_miss = cpu_read_miss || cpu_write_miss;
+
+    // --- Tính next_wbuf_valid - khi nào push thì ghi 1 pop ra thì 0 ---
+    reg [3:0] next_wbuf_valid;
+    always @(*) begin
+        next_wbuf_valid = wbuf_valid;
+        if (wbuf_push && !wbuf_full)
+            next_wbuf_valid[wbuf_wptr[1:0]] = 1'b1;
+        if (wbuf_pop && !wbuf_empty)
+            next_wbuf_valid[wbuf_rptr[1:0]] = 1'b0;
+    end
+
+    // --- quét qua buffer xem dữ liệu cần có trong đây ko---
+    wire [29:0] cpu_word_addr = cpu_addr[31:2];
+    reg        wbuf_fwd_hit;
+    reg [31:0] wbuf_fwd_data;
+    integer k;
+    reg [2:0] scan_ptr;
+    reg [1:0] scan_idx;
+    reg [29:0] scan_addr;
+    always @(*) begin
+        wbuf_fwd_hit  = 1'b0;
+        wbuf_fwd_data = 32'b0;
+
+        for (k = 0; k < 4; k = k + 1) begin
+            scan_ptr  = wbuf_wptr - 3'd1 - k;
+            scan_idx  = scan_ptr[1:0];
+            scan_addr = wbuf_mem[scan_idx][63:34];
+
+            if (!wbuf_fwd_hit && wbuf_valid[scan_idx] && (scan_addr == cpu_word_addr)) begin
+                wbuf_fwd_hit  = 1'b1;
+                wbuf_fwd_data = wbuf_mem[scan_idx][31:0];
+            end
+        end
+    end
+
+    // Ghi vào buffer / xóa khỏi buffer
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            wbuf_wptr  <= 3'b000;
+            wbuf_rptr  <= 3'b000;
+            wbuf_valid <= 4'b0000;
+        end else begin
+            wbuf_valid <= next_wbuf_valid;                
+            if (wbuf_push && !wbuf_full) begin
+                wbuf_mem[wbuf_wptr[1:0]] <= wbuf_wdata;
+                wbuf_wptr <= wbuf_wptr + 1;
+            end
+            if (wbuf_pop && !wbuf_empty) begin
+                wbuf_rptr <= wbuf_rptr + 1;
+            end
+        end
+    end
+
+    // =========================================================================
+    // CONSUMER FSM — Sequential Logic
+    // =========================================================================
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            cons_state    <= CONS_IDLE;
+            cons_req_sent <= 1'b0;
+        end else begin
+            cons_state <= cons_next_state;   
+            if (cons_state == CONS_IDLE) begin
+                cons_req_sent <= 1'b0;
+            end else if (cons_state == CONS_WRITE) begin
+                if (mem_write_back_valid) // ghi xong
+                    cons_req_sent <= 1'b0;
+                else if (mem_write_ready && mem_write_req)
+                    cons_req_sent <= 1'b1;
+            end
+        end
+    end
 
     // -------------------------------------------------------------------------
     // LOGIC CHUYỂN TRẠNG THÁI
@@ -190,36 +321,60 @@ module data_cache (
         if (!rst_n) begin
             state <= IDLE;
             req_sent <= 1'b0;
+            miss_is_write <= 1'b0;
+            miss_addr     <= 32'b0;
+            miss_wdata    <= 32'b0;
+            miss_size     <= 2'b10;
+            miss_unsigned <= 1'b0;
+            miss_target_way <= 2'b00;
             for(i=0; i<16; i=i+1) begin 
-                valid1[i]<=1'b0; valid2[i]<=1'b0; valid3[i]<=1'b0; valid4[i]<=1'b0; 
+                valid1[i]<=1'b0; 
+                valid2[i]<=1'b0; 
+                valid3[i]<=1'b0; 
+                valid4[i]<=1'b0; 
                 plru[i]<=3'b000; 
             end
+            
         end else begin
             state <= next_state;
 
-            // Quản lý bắt tay AXI
             if (state == IDLE) begin
-                req_sent <= 1'b0;
+                if (cpu_read_req && !cache_array_hit && !wbuf_fwd_hit && (cons_state == CONS_IDLE)) begin // miss
+                    miss_is_write  <= 1'b0;
+                    miss_addr      <= cpu_addr;
+                    miss_wdata     <= 32'b0;
+                    miss_size      <= mem_size;
+                    miss_unsigned  <= mem_unsigned;
+                    miss_target_way <= target_way;
+                end else if (cpu_write_req && !cache_array_hit && !wbuf_fwd_hit && (mem_size != 2'b10) && !wbuf_full && (cons_state == CONS_IDLE)) begin // miss
+                    miss_is_write  <= 1'b1;
+                    miss_addr      <= cpu_addr;
+                    miss_wdata     <= cpu_write_data;
+                    miss_size      <= mem_size;
+                    miss_unsigned  <= mem_unsigned;
+                    miss_target_way <= target_way;
+                end
+            end
+
+            if (state == IDLE) begin
+                req_sent <= 1'b0;      // IDLE không dùng AXI bus
             end else if (state == MEM_READ) begin
                 if (mem_read_valid) req_sent <= 1'b0;
                 else if (mem_read_ready && mem_read_req) req_sent <= 1'b1;
-            end else if (state == MEM_WRITE_BACK) begin
-                if (mem_write_back_valid) req_sent <= 1'b0; 
-                else if (mem_write_ready && mem_write_req) req_sent <= 1'b1;
             end
 
             // Cập nhật Metadata khi Ghi Cache thành công
             if (way_write_en != 4'b0000) begin
-                plru[index] <= update_plru(plru[index], target_way);
+                plru[cache_index] <= update_plru(plru[cache_index], (state == IDLE) ? target_way : miss_target_way);
                 if (state == MEM_READ || state == IDLE) begin 
-                    case(target_way)
-                        2'd0: valid1[index] <= 1'b1;
-                        2'd1: valid2[index] <= 1'b1;
-                        2'd2: valid3[index] <= 1'b1;
-                        2'd3: valid4[index] <= 1'b1;
+                    case((state == IDLE) ? target_way : miss_target_way)
+                        2'd0: valid1[cache_index] <= 1'b1;
+                        2'd1: valid2[cache_index] <= 1'b1;
+                        2'd2: valid3[cache_index] <= 1'b1;
+                        2'd3: valid4[cache_index] <= 1'b1;
                     endcase
                 end
-            end else if (state == IDLE && cpu_read_req && dcache_hit) begin
+            end else if (state == IDLE && cpu_read_req && cache_array_hit) begin
                 plru[index] <= update_plru(plru[index], target_way);
             end
         end
@@ -230,21 +385,25 @@ module data_cache (
     // -------------------------------------------------------------------------
     always @(*) begin
         next_state       = state;
-        target_way       = 2'd0; // Khử Latch
+        cons_next_state  = cons_state;      
+        target_way       = 2'd0;
         dcache_hit       = 1'b0; 
         dcache_stall     = 1'b0;
         mem_read_req     = 1'b0; 
-        mem_write_req    = 1'b0;
-        mem_addr         = 32'b0;
+        mem_write_req    = 1'b0;            
+        mem_addr         = 32'b0;          
         cpu_read_data    = 32'b0;
-        mem_write_data   = 32'b0;
+        mem_write_data   = 32'b0;           
         way_write_en     = 4'b0000; 
         final_write_data = 32'b0;
-
-        if      (valid1[index] && t1 == tag) begin dcache_hit=1'b1; target_way=2'd0; end
-        else if (valid2[index] && t2 == tag) begin dcache_hit=1'b1; target_way=2'd1; end
-        else if (valid3[index] && t3 == tag) begin dcache_hit=1'b1; target_way=2'd2; end
-        else if (valid4[index] && t4 == tag) begin dcache_hit=1'b1; target_way=2'd3; end
+        wbuf_push        = 1'b0;
+        wbuf_pop         = 1'b0;            
+        wbuf_wdata       = 64'b0;
+        
+        if      (cache_hit_way0) begin dcache_hit=1'b1; target_way=2'd0; end
+        else if (cache_hit_way1) begin dcache_hit=1'b1; target_way=2'd1; end
+        else if (cache_hit_way2) begin dcache_hit=1'b1; target_way=2'd2; end
+        else if (cache_hit_way3) begin dcache_hit=1'b1; target_way=2'd3; end
         else begin
             dcache_hit = 1'b0;
             if      (!valid1[index]) target_way = 2'd0;
@@ -262,8 +421,14 @@ module data_cache (
                 //     next_state   = IDLE;
                 
                 // end else 
-                if (cpu_read_req) begin
-                    if (dcache_hit) begin
+                if (cpu_read_req) begin // cpu yêu cầu đọc
+                    if (wbuf_fwd_hit) begin // hit ở buffer
+                        dcache_hit    = 1'b1;
+                        //$display("xac nhan buffer hit");
+                        cpu_read_data = read_data_with_size(wbuf_fwd_data, mem_size, byte_offset, mem_unsigned);
+                    end else if (cache_array_hit) begin // hit ở trong cache
+                        //$display("xac nhan cache hit");
+                        dcache_hit = 1'b1;
                         case (target_way)
                             2'd0: cpu_read_data = read_data_with_size(d1, mem_size, byte_offset, mem_unsigned);
                             2'd1: cpu_read_data = read_data_with_size(d2, mem_size, byte_offset, mem_unsigned);
@@ -272,29 +437,56 @@ module data_cache (
                         endcase
                     end else begin
                         dcache_stall = 1'b1;
-                        next_state   = MEM_READ; // Write-Through bỏ qua check dirty, ra Fetch luôn
-                    end
-                
+                        if (cons_state == CONS_IDLE) begin
+                            next_state = MEM_READ;
+                        end
+                    end               
                 end else if (cpu_write_req) begin
-                    if (dcache_hit) begin
-                        way_write_en[target_way] = 1'b1;
-                        case (target_way)
-                            2'd0: final_write_data = write_data_with_size(d1, cpu_write_data, mem_size, byte_offset);
-                            2'd1: final_write_data = write_data_with_size(d2, cpu_write_data, mem_size, byte_offset);
-                            2'd2: final_write_data = write_data_with_size(d3, cpu_write_data, mem_size, byte_offset);
-                            2'd3: final_write_data = write_data_with_size(d4, cpu_write_data, mem_size, byte_offset);
-                        endcase
-                        dcache_stall = 1'b1;
-                        next_state   = MEM_WRITE_BACK; // Hit: Xuyên ra bus
+                    if (cache_array_hit) begin
+                        dcache_hit = 1'b1;
+
+                        if (!wbuf_full) begin
+                            way_write_en[target_way] = 1'b1;
+                            case (target_way)
+                                2'd0: final_write_data = write_data_with_size(d1, cpu_write_data, mem_size, byte_offset);
+                                2'd1: final_write_data = write_data_with_size(d2, cpu_write_data, mem_size, byte_offset);
+                                2'd2: final_write_data = write_data_with_size(d3, cpu_write_data, mem_size, byte_offset);
+                                2'd3: final_write_data = write_data_with_size(d4, cpu_write_data, mem_size, byte_offset);
+                            endcase
+
+                            // Push merged word vào WBUF để consumer ghi xuống RAM
+                            wbuf_push  = 1'b1;
+                            wbuf_wdata = {{tag, index, 2'b00}, final_write_data};
+                        end else begin
+                            dcache_stall = 1'b1;
+                        end
+                    end else if (wbuf_fwd_hit) begin
+                        dcache_hit = 1'b1;
+
+                        if (!wbuf_full) begin
+                            way_write_en[target_way] = 1'b1;
+                            final_write_data         = write_data_with_size(wbuf_fwd_data, cpu_write_data, mem_size, byte_offset);
+
+                            wbuf_push  = 1'b1;
+                            wbuf_wdata = {{tag, index, 2'b00}, final_write_data};
+                        end else begin
+                            dcache_stall = 1'b1;
+                        end
                     end else begin
                         if (mem_size != 2'b10) begin
                             dcache_stall = 1'b1;
-                            next_state   = MEM_READ; // Miss Byte/Half: Cần nạp Word về trước (Fetch on Write)
+                            if (cons_state == CONS_IDLE && !wbuf_full) begin
+                                next_state = MEM_READ;
+                            end
                         end else begin
-                            dcache_stall             = 1'b1;
-                            way_write_en[target_way] = 1'b1;
-                            final_write_data         = cpu_write_data;
-                            next_state               = MEM_WRITE_BACK; // Miss Word: Xuyên ra bus
+                            if (!wbuf_full) begin
+                                way_write_en[target_way] = 1'b1;
+                                final_write_data = cpu_write_data;
+                                wbuf_push = 1'b1;
+                                wbuf_wdata = {{tag, index, 2'b00}, cpu_write_data};
+                            end else begin
+                                dcache_stall = 1'b1;
+                            end
                         end
                     end
                 end
@@ -303,46 +495,53 @@ module data_cache (
             MEM_READ: begin
                 dcache_stall = 1'b1;
                 mem_read_req = !req_sent; 
-                mem_addr     = {tag, index, 2'b00};
+                mem_addr     = {miss_tag, miss_index, 2'b00};
 
                 if (mem_read_valid) begin
                     mem_read_req = 1'b0;
                     way_write_en = 4'b0000;
-                    way_write_en[target_way] = 1'b1;
+                    way_write_en[miss_target_way] = 1'b1;
                     
-                    if (cpu_write_req) begin
-                        final_write_data = write_data_with_size(mem_read_data, cpu_write_data, mem_size, byte_offset);
-                        next_state       = MEM_WRITE_BACK; // Sửa xong thì phải xuất ra Bus
-                    end else begin
+                    if (miss_is_write) begin
+                        final_write_data = write_data_with_size(mem_read_data, miss_wdata, miss_size, miss_byte_offset);
+                        wbuf_push  = 1'b1;
+                        wbuf_wdata = {{miss_tag, miss_index, 2'b00}, final_write_data};
+                        dcache_stall = 1'b0;
+                        next_state   = IDLE;
+                    end else begin // miss do lệnh read
                         final_write_data = mem_read_data;
+                        cpu_read_data    = read_data_with_size(mem_read_data, miss_size, miss_byte_offset, miss_unsigned);
                         dcache_stall     = 1'b0;
                         next_state       = IDLE;
                     end
-                    cpu_read_data = read_data_with_size(mem_read_data, mem_size, byte_offset, mem_unsigned);
-                end
-            end
-
-            MEM_WRITE_BACK: begin // Tận dụng state này để làm luồng Write-Through
-                dcache_stall  = 1'b1;
-                mem_write_req = !req_sent; 
-                mem_addr      = {tag, index, 2'b00}; // Địa chỉ trỏ tới vị trí CPU cần ghi
-
-                // Xuất dữ liệu đã được cập nhật từ SRAM
-                case (target_way)
-                    2'd0: mem_write_data = d1;
-                    2'd1: mem_write_data = d2;
-                    2'd2: mem_write_data = d3;
-                    2'd3: mem_write_data = d4;
-                endcase
-
-                if (mem_write_back_valid) begin
-                    mem_write_req = 1'b0;
-                    dcache_stall  = 1'b0; // Ghi xong là nhả CPU
-                    next_state    = IDLE;
                 end
             end
             
             default: next_state = IDLE;
-        endcase
+        endcase 
+
+        // =================================================================
+        // CONSUMER FSM — Combinational Logic 
+        // =================================================================
+        cons_next_state = cons_state;    // default: giữ nguyên state
+        
+        case (cons_state)
+            CONS_IDLE: begin // ko làm gì thì ghi xuống
+                if (!wbuf_empty && !main_using_bus && !pending_cpu_miss)
+                    cons_next_state = CONS_WRITE;
+            end
+            
+            CONS_WRITE: begin
+                mem_write_req  = !cons_req_sent;
+                mem_addr       = wbuf_out_addr;
+                mem_write_data = wbuf_out_data;
+                
+                if (mem_write_back_valid) begin
+                    mem_write_req   = 1'b0;
+                    wbuf_pop        = 1'b1;
+                    cons_next_state = CONS_IDLE;
+                end
+            end
+        endcase   
     end
 endmodule
