@@ -71,13 +71,24 @@ module f_register_file (
     output [31:0] read_data2,
     input reg_write_en,   
     input [4:0] write_reg,    
-    input [31:0] write_data    
+    input [31:0] write_data,
+    
+    // --- BỔ SUNG CỔNG DEBUG CHUYÊN DỤNG ---
+    input  wire        dbg_mode,           // Trạng thái CPU đang Halt
+    input  wire [4:0]  dbg_read_addr,      // Địa chỉ FPR cần đọc
+    output wire [31:0] dbg_read_data,      // Dữ liệu trả về
+    input  wire        dbg_write_en,       // Cho phép DM ghi đè
+    input  wire [4:0]  dbg_write_addr,     // Địa chỉ FPR cần ghi
+    input  wire [31:0] dbg_write_data      // Dữ liệu DM ghi
 );
-
     (* ram_style = "distributed" *) reg [31:0] f_regfile [0:31];
     
+    // Đọc cho Pipeline
     assign read_data1 = f_regfile[read_reg1];
     assign read_data2 = f_regfile[read_reg2];
+    
+    // Đọc cho Debug (Tổ hợp, trả về ngay lập tức)
+    assign dbg_read_data = f_regfile[dbg_read_addr];
     
     integer i;
     always @(posedge clk) begin
@@ -85,11 +96,17 @@ module f_register_file (
             for (i = 0; i < 32; i = i + 1) begin
                 f_regfile[i] <= 32'b0;
             end
-        end else if (reg_write_en) begin
-            f_regfile[write_reg] <= write_data;
+        end else begin
+            // Ưu tiên cao nhất cho Debug Mode ghi đè
+            if (dbg_mode && dbg_write_en) begin
+                f_regfile[dbg_write_addr] <= dbg_write_data;
+            end 
+            // Nếu không Halt, pipeline hoạt động bình thường
+            else if (reg_write_en) begin
+                f_regfile[write_reg] <= write_data;
+            end
         end
     end
-    
 endmodule
 
 
@@ -115,14 +132,27 @@ module csr_register_file (
     output [31:0] mtvec_out,
     output [31:0] mepc_out,
     output [31:0] mie_out,
-    output mstatus_mie
+    output mstatus_mie,
+
+    // --- CỔNG GIAO TIẾP DEBUG ---
+    input         dbg_halt_req,
+    input         dbg_halted,
+    input  [31:0] debug_pc_in,
+    output [31:0] dpc_out,
+    output [31:0] dcsr_out,
+    
+    input  [11:0] dbg_reg_read_addr,  // Trỏ thẳng vào địa chỉ CSR 12-bit
+    output reg [31:0] dbg_read_data,  // Đọc mọi CSR
+    input         dbg_reg_write_en,
+    input  [11:0] dbg_reg_write_addr, // Trỏ thẳng vào địa chỉ CSR 12-bit
+    input  [31:0] dbg_reg_write_data
 );
 
     localparam [31:0] MVENDORID  = 32'h0;
     localparam [31:0] MARCHID    = 32'h0;
     localparam [31:0] MIMPID     = 32'h01000000;
     localparam [31:0] MHARTID    = 32'h0;
-    localparam [31:0] MISA       = 32'h40000100;
+    localparam [31:0] MISA       = 32'h40001120;
 
     reg [31:0] mstatus;
     reg [31:0] mie;
@@ -141,11 +171,16 @@ module csr_register_file (
 
     reg [63:0] mcycle;
     reg [63:0] minstret;
+    reg        dbg_halted_q;
 
     assign mtvec_out = mtvec;
     assign mepc_out = mepc;
     assign mstatus_mie = mstatus[3];
     assign mie_out = mie;
+    
+    // Bổ sung: Gán giá trị dpc ra cổng dpc_out
+    assign dpc_out = dpc;
+    assign dcsr_out = dcsr;
 
     always @(*) begin
         case (csr_addr)
@@ -173,10 +208,28 @@ module csr_register_file (
             default: csr_read_data = 32'b0;
         endcase
     end
+
+    always @(*) begin
+        case (dbg_reg_read_addr)
+            12'hF11: dbg_read_data = MVENDORID;
+            12'hF12: dbg_read_data = MARCHID;
+            12'h301: dbg_read_data = MISA;
+            12'h300: dbg_read_data = mstatus;
+            12'h304: dbg_read_data = mie;
+            12'h305: dbg_read_data = mtvec;
+            12'h341: dbg_read_data = mepc;
+            12'hB00, 12'hC00, 12'hC01: dbg_read_data = mcycle[31:0];
+            // Debug CSRs
+            12'h7b0: dbg_read_data = dcsr;
+            12'h7b1: dbg_read_data = dpc;
+            12'h7b2: dbg_read_data = dscratch0;
+            default: dbg_read_data = 32'b0;
+        endcase
+    end
     
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
-            mstatus   <= 32'h00001800;
+            mstatus   <= 32'h00003800;
             mie       <= 32'b0;
             mtvec     <= 32'b0;
             mscratch  <= 32'b0;
@@ -188,7 +241,33 @@ module csr_register_file (
             dcsr      <= 32'h00000003; // Privilege mode M
             dpc       <= 32'b0;
             dscratch0 <= 32'b0;
+            dbg_halted_q <= 1'b0;
         end else begin
+            dbg_halted_q <= dbg_halted;
+
+            // 1. Logic tự động lưu PC & Cause khi CPU VỪA BỊ HALT (Cạnh lên)
+            if (dbg_halted && !dbg_halted_q) begin
+                dpc <= debug_pc_in;
+                
+                // Cập nhật nguyên nhân Halt vào dcsr[8:6]
+                if (dbg_halt_req) begin
+                    dcsr[8:6] <= 3'd3; // Cause 3: Dừng do bị yêu cầu Halt
+                end else begin
+                    dcsr[8:6] <= 3'd4; // Cause 4: Dừng do hoàn tất lệnh Step
+                end
+            end
+            // 2. OpenOCD chủ động ghi đè DPC / DCSR qua lệnh Debug
+            else if (dbg_reg_write_en && dbg_reg_write_addr == 12'h07b1) begin
+                dpc <= dbg_reg_write_data;
+            end
+            else if (dbg_reg_write_en && dbg_reg_write_addr == 12'h07b0) begin
+                dcsr <= dbg_reg_write_data;
+            end
+            // Nếu phần mềm cố tình ghi đè DPC bằng lệnh CSR write nội bộ...
+            else if (csr_write_en && (csr_op != 2'b00) && (csr_write_addr == 12'h7b1)) begin
+                dpc <= csr_write_data;
+            end
+
             if (count_en) begin
                 mcycle <= mcycle + 64'd1;
             end
@@ -227,7 +306,7 @@ module csr_register_file (
                     12'hB82: minstret[63:32] <= csr_write_data;
                     // Write Debug CSRs
                     12'h7b0: dcsr <= csr_write_data;
-                    12'h7b1: dpc <= csr_write_data;
+                    // 12'h7b1: dpc <= csr_write_data; // Đã xử lý ở khối ưu tiên phía trên
                     12'h7b2: dscratch0 <= csr_write_data;
                 endcase
             end

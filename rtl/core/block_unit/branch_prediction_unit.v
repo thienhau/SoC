@@ -100,10 +100,6 @@ module branch_history_table (
     reg [PREDICT-1:0] predicts [0:ENTRY-1];
 
     assign predict_taken = !btb_hit ? 1'b0 : (predicts[pc_in[5:2]] == 2'b10 || predicts[pc_in[5:2]] == 2'b11) ? 1'b1 : 1'b0;
-
-    reg [INDEX-1:0] prev_index = 0;
-    reg prev_update_bht = 0;
-    reg prev_actual_taken = 0;
     
     integer i;
     always @(posedge clk) begin
@@ -112,31 +108,16 @@ module branch_history_table (
                 predicts[i] <= 2'b10; // Reset to weakly taken
             end 
         end else if (update_bht) begin
-            if (index == prev_index && update_bht == prev_update_bht && actual_taken == prev_actual_taken) begin
-
-            end else begin
-                if (actual_taken) begin
-                    if (predicts[index] != 2'b11) begin
-                        predicts[index] <= predicts[index] + 1;
-                    end
-                end else if (!actual_taken) begin
-                    if (predicts[index] != 2'b00) begin
-                        predicts[index] <= predicts[index] - 1;
-                    end
+            if (actual_taken) begin
+                if (predicts[index] != 2'b11) begin
+                    predicts[index] <= predicts[index] + 1;
+                end
+            end else if (!actual_taken) begin
+                if (predicts[index] != 2'b00) begin
+                    predicts[index] <= predicts[index] - 1;
                 end
             end
         end
     end
 
-    always @(posedge clk) begin
-        if (!reset_n) begin
-            prev_index <= 0;
-            prev_update_bht <= 0;
-            prev_actual_taken <= 0;
-        end else begin
-            prev_index <= index;
-            prev_update_bht <= update_bht;
-            prev_actual_taken <= actual_taken;
-        end
-    end
 endmodule

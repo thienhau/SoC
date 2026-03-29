@@ -224,7 +224,7 @@ module execute (
     output reg [31:0] alu_result,
     output reg branch_taken,
     output reg [31:0] csr_write_data,
-    output md_alu_stall,
+    output mf_alu_stall,
     output [31:0] fpu_result_out
 );  
 
@@ -278,101 +278,75 @@ module execute (
     );
 
     assign fpu_result_out = fpu_result;
-    assign md_alu_stall = mul_alu_stall || div_alu_stall || fpu_stall;
+    assign mf_alu_stall = mul_alu_stall || div_alu_stall || fpu_stall;
 
     wire [31:0] csr_rs1_val = id_ex_funct3[2] ? {27'b0, id_ex_rs1} : alu_in1;
-
-    reg [31:0] prev_id_ex_instr;
-    reg [31:0] prev_alu_result;
-    reg prev_branch_taken;
-    reg [31:0] prev_csr_write_data;
 
     always @(*) begin
         branch_taken = 1'b0;
         csr_write_data = 32'b0;
         
-        if ((prev_id_ex_instr == id_ex_instr) && (id_ex_instr != 32'b0) && 
-            !id_ex_md_type && !id_ex_fpu_en) begin
-            alu_result = prev_alu_result;
-            branch_taken = prev_branch_taken;
-            csr_write_data = prev_csr_write_data;
-        end else begin
-            if (id_ex_csr_we) begin
-                alu_result = csr_read_data;
-                case (id_ex_csr_op)
-                    2'b01: csr_write_data = csr_rs1_val;
-                    2'b10: csr_write_data = csr_read_data | csr_rs1_val;
-                    2'b11: csr_write_data = csr_read_data & ~csr_rs1_val;
-                    default: csr_write_data = csr_rs1_val;
-                endcase
-            end else if (id_ex_f_to_x) begin
-                alu_result = fpu_result;
-            end else if (id_ex_lui) begin
-                alu_result = id_ex_ext_imm;
-            end else if (id_ex_auipc) begin
-                alu_result = id_ex_pc_in + id_ex_ext_imm;
-            end else if (id_ex_md_type) begin
-                if (mul_alu_done) begin
-                    alu_result = mul_result;
-                end else if (div_alu_done) begin
-                    alu_result = div_result;
-                end else begin
-                    alu_result = 32'd0;
-                end
-            end else begin 
-                case (id_ex_alu_ctrl)
-                    4'b0000: alu_result = alu_in1 & alu_in2;  
-                    4'b0001: alu_result = alu_in1 | alu_in2;  
-                    4'b0010: alu_result = alu_in1 + alu_in2;  
-                    4'b0110: begin 
-                        alu_result = alu_in1 - alu_in2;  
-                        if (id_ex_branch) begin
-                            case (id_ex_funct3)
-                                3'b000: branch_taken = (alu_result == 32'd0); 
-                                3'b001: branch_taken = (alu_result != 32'd0); 
-                                3'b100: branch_taken = ($signed(alu_in1) < $signed(alu_in2)); 
-                                3'b101: branch_taken = ($signed(alu_in1) >= $signed(alu_in2)); 
-                                3'b110: branch_taken = (alu_in1 < alu_in2); 
-                                3'b111: branch_taken = (alu_in1 >= alu_in2); 
-                                default: branch_taken = 1'b0;
-                            endcase
-                        end
-                    end
-                    4'b0100: alu_result = alu_in1 ^ alu_in2;  
-                    4'b0111: begin
-                        if ($signed(alu_in1) < $signed(alu_in2)) begin
-                            alu_result = 32'd1;
-                        end else begin
-                            alu_result = 32'd0;
-                        end
-                    end  
-                    4'b1010: begin
-                        if (alu_in1 < alu_in2) begin
-                            alu_result = 32'd1;
-                        end else begin
-                            alu_result = 32'd0;
-                        end
-                    end  
-                    4'b1000: alu_result = alu_in1 << alu_in2[4:0];  
-                    4'b1001: alu_result = alu_in1 >> alu_in2[4:0];  
-                    4'b1011: alu_result = $signed(alu_in1) >>> alu_in2[4:0];  
-                    default: alu_result = alu_in1 + alu_in2;
-                endcase
+        if (id_ex_csr_we) begin
+            alu_result = csr_read_data;
+            case (id_ex_csr_op)
+                2'b01: csr_write_data = csr_rs1_val;
+                2'b10: csr_write_data = csr_read_data | csr_rs1_val;
+                2'b11: csr_write_data = csr_read_data & ~csr_rs1_val;
+                default: csr_write_data = csr_rs1_val;
+            endcase
+        end else if (id_ex_f_to_x) begin
+            alu_result = fpu_result;
+        end else if (id_ex_lui) begin
+            alu_result = id_ex_ext_imm;
+        end else if (id_ex_auipc) begin
+            alu_result = id_ex_pc_in + id_ex_ext_imm;
+        end else if (id_ex_md_type) begin
+            if (mul_alu_done) begin
+                alu_result = mul_result;
+            end else if (div_alu_done) begin
+                alu_result = div_result;
+            end else begin
+                alu_result = 32'd0;
             end
-        end
-    end
-
-    always @(posedge clk or negedge reset_n) begin
-        if (!reset_n) begin
-            prev_id_ex_instr <= 32'd0;
-            prev_alu_result <= 32'd0;
-            prev_branch_taken <= 1'b0;
-            prev_csr_write_data <= 32'd0;
-        end else begin
-            prev_id_ex_instr <= id_ex_instr;
-            prev_alu_result <= alu_result;
-            prev_branch_taken <= branch_taken;
-            prev_csr_write_data <= csr_write_data;
+        end else begin 
+            case (id_ex_alu_ctrl)
+                4'b0000: alu_result = alu_in1 & alu_in2;  
+                4'b0001: alu_result = alu_in1 | alu_in2;  
+                4'b0010: alu_result = alu_in1 + alu_in2;  
+                4'b0110: begin 
+                    alu_result = alu_in1 - alu_in2;  
+                    if (id_ex_branch) begin
+                        case (id_ex_funct3)
+                            3'b000: branch_taken = (alu_result == 32'd0); 
+                            3'b001: branch_taken = (alu_result != 32'd0); 
+                            3'b100: branch_taken = ($signed(alu_in1) < $signed(alu_in2)); 
+                            3'b101: branch_taken = ($signed(alu_in1) >= $signed(alu_in2)); 
+                            3'b110: branch_taken = (alu_in1 < alu_in2); 
+                            3'b111: branch_taken = (alu_in1 >= alu_in2); 
+                            default: branch_taken = 1'b0;
+                        endcase
+                    end
+                end
+                4'b0100: alu_result = alu_in1 ^ alu_in2;  
+                4'b0111: begin
+                    if ($signed(alu_in1) < $signed(alu_in2)) begin
+                        alu_result = 32'd1;
+                    end else begin
+                        alu_result = 32'd0;
+                    end
+                end  
+                4'b1010: begin
+                    if (alu_in1 < alu_in2) begin
+                        alu_result = 32'd1;
+                    end else begin
+                        alu_result = 32'd0;
+                    end
+                end  
+                4'b1000: alu_result = alu_in1 << alu_in2[4:0];  
+                4'b1001: alu_result = alu_in1 >> alu_in2[4:0];  
+                4'b1011: alu_result = $signed(alu_in1) >>> alu_in2[4:0];  
+                default: alu_result = alu_in1 + alu_in2;
+            endcase
         end
     end
     
