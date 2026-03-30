@@ -84,7 +84,10 @@ module axi_sdram_controller #(
     output wire [SDRAM_BANK_WIDTH-1:0] sdram_ba,
     output wire [SDRAM_ADDR_WIDTH-1:0] sdram_addr,
     output wire [(SDRAM_DATA_WIDTH/8)-1:0] sdram_dqm,
-    inout  wire [SDRAM_DATA_WIDTH-1:0] sdram_dq
+    
+    input  wire [SDRAM_DATA_WIDTH-1:0] sdram_dq_i,
+    output wire [SDRAM_DATA_WIDTH-1:0] sdram_dq_o,
+    output wire                        sdram_dq_oe
 );
 
     // ==========================================
@@ -126,10 +129,12 @@ module axi_sdram_controller #(
     reg [SDRAM_ADDR_WIDTH-1:0] addr_reg;
     reg [(SDRAM_DATA_WIDTH/8)-1:0] dqm_reg;
     
-    // Quản lý Bus Dữ liệu Inout (Tri-state buffer)
+    // Quản lý Bus Dữ liệu (Đã tách khỏi Tri-state buffer)
     reg [SDRAM_DATA_WIDTH-1:0] dq_out_reg;
-    reg                        dq_oe_reg; // Output Enable
-    wire [SDRAM_DATA_WIDTH-1:0] dq_in_wire = sdram_dq;
+    reg                        dq_oe_reg;
+
+    // Đọc dữ liệu từ cổng input
+    wire [SDRAM_DATA_WIDTH-1:0] dq_in_wire = sdram_dq_i;
 
     assign sdram_cs_n  = cmd_reg[3];
     assign sdram_ras_n = cmd_reg[2];
@@ -138,7 +143,10 @@ module axi_sdram_controller #(
     assign sdram_ba    = ba_reg;
     assign sdram_addr  = addr_reg;
     assign sdram_dqm   = dqm_reg;
-    assign sdram_dq    = dq_oe_reg ? dq_out_reg : {SDRAM_DATA_WIDTH{1'bz}};
+    
+    // Đẩy tín hiệu ra các cổng thay vì dùng inout nội bộ
+    assign sdram_dq_o  = dq_out_reg;
+    assign sdram_dq_oe = dq_oe_reg;
 
     // ==========================================
     // QUẢN LÝ HÀNG TRONG CÁC BANK (OPEN-ROW POLICY)
@@ -204,10 +212,12 @@ module axi_sdram_controller #(
             end
 
             // Xóa các tín hiệu AXI
-            s_axi_awready <= 1'b0; s_axi_wready <= 1'b0; s_axi_bvalid <= 1'b0;
+            s_axi_awready <= 1'b0;
+            s_axi_wready <= 1'b0; s_axi_bvalid <= 1'b0;
             s_axi_arready <= 1'b0; s_axi_rvalid <= 1'b0; s_axi_rlast <= 1'b0;
             
-            cmd_reg <= CMD_NOP; dq_oe_reg <= 1'b0; dqm_reg <= {(SDRAM_DATA_WIDTH/8){1'b0}};
+            cmd_reg <= CMD_NOP;
+            dq_oe_reg <= 1'b0; dqm_reg <= {(SDRAM_DATA_WIDTH/8){1'b0}};
         end else begin
             // Mặc định cho mỗi chu kỳ
             cmd_reg   <= CMD_NOP;
@@ -216,7 +226,8 @@ module axi_sdram_controller #(
 
             // Xóa cờ handshake AXI khi Master đã nhận
             if (s_axi_bvalid && s_axi_bready) s_axi_bvalid <= 1'b0;
-            if (s_axi_rvalid && s_axi_rready) begin s_axi_rvalid <= 1'b0; s_axi_rlast <= 1'b0; end
+            if (s_axi_rvalid && s_axi_rready) begin s_axi_rvalid <= 1'b0; s_axi_rlast <= 1'b0;
+            end
 
             if (delay_timer > 0) begin
                 delay_timer <= delay_timer - 1'b1;
@@ -249,7 +260,7 @@ module axi_sdram_controller #(
                     ST_INIT_LMR: begin
                         cmd_reg <= CMD_LOAD_MODE;
                         // Mode Register: Burst Length = 1, Chế độ Tuần tự, CAS Latency (Ví dụ CAS=3)
-                        addr_reg <= {3'b000, 1'b0, 2'b00, 3'b011, 1'b0, 3'b000}; 
+                        addr_reg <= {3'b000, 1'b0, 2'b00, 3'b011, 1'b0, 3'b000};
                         delay_timer <= TRP_CYCLES;
                         state <= ST_IDLE;
                     end
@@ -263,8 +274,10 @@ module axi_sdram_controller #(
                             cmd_reg <= CMD_PRECHARGE;
                             addr_reg[10] <= 1'b1; // All banks
                             delay_timer <= TRP_CYCLES - 1;
+                            
                             // Xóa toàn bộ trạng thái Open-Row
-                            is_bank_open[0]<=0; is_bank_open[1]<=0; is_bank_open[2]<=0; is_bank_open[3]<=0;
+                            is_bank_open[0]<=0;
+                            is_bank_open[1]<=0; is_bank_open[2]<=0; is_bank_open[3]<=0;
                             state <= ST_REFRESH;
                         end 
                         else if (s_axi_awvalid && !s_axi_awready) begin
@@ -279,11 +292,14 @@ module axi_sdram_controller #(
                             
                             // Quyết định hướng đi dựa trên Open-Row Policy
                             if (is_bank_open[s_axi_awaddr[24:23]] && (open_row_addr[s_axi_awaddr[24:23]] == s_axi_awaddr[22:10])) begin
-                                state <= ST_WRITE_BEAT; // Row Hit -> Đi thẳng vào Ghi
+                                state <= ST_WRITE_BEAT;
+                                // Row Hit -> Đi thẳng vào Ghi
                             end else if (is_bank_open[s_axi_awaddr[24:23]]) begin
-                                state <= ST_PRECHARGE;  // Row Miss -> Phải đóng hàng cũ
+                                state <= ST_PRECHARGE;
+                                // Row Miss -> Phải đóng hàng cũ
                             end else begin
-                                state <= ST_ACTIVATE;   // Hàng đang đóng -> Mở hàng mới
+                                state <= ST_ACTIVATE;
+                                // Hàng đang đóng -> Mở hàng mới
                             end
                         end 
                         else if (s_axi_arvalid && !s_axi_arready) begin
@@ -295,7 +311,7 @@ module axi_sdram_controller #(
                             s_axi_rid     <= s_axi_arid;
                             burst_count   <= 8'd0;
                             is_read_transaction <= 1'b1;
-
+                            
                             if (is_bank_open[s_axi_araddr[24:23]] && (open_row_addr[s_axi_araddr[24:23]] == s_axi_araddr[22:10])) begin
                                 state <= ST_READ_BEAT;
                             end else if (is_bank_open[s_axi_araddr[24:23]]) begin
@@ -310,18 +326,23 @@ module axi_sdram_controller #(
                     // CÁC TRẠNG THÁI ĐIỀU KHIỂN HÀNG (ROW COMMANDS)
                     // -----------------------------------------------------------------
                     ST_PRECHARGE: begin
-                        s_axi_awready <= 1'b0; s_axi_arready <= 1'b0;
+                        s_axi_awready <= 1'b0;
+                        s_axi_arready <= 1'b0;
                         cmd_reg <= CMD_PRECHARGE;
                         ba_reg <= target_bank;
-                        addr_reg[10] <= 1'b0; // Chỉ Precharge Bank mục tiêu
-                        is_bank_open[target_bank] <= 1'b0; // Cập nhật trạng thái
+                        addr_reg[10] <= 1'b0;
                         
+                        // Chỉ Precharge Bank mục tiêu
+                        is_bank_open[target_bank] <= 1'b0;
+                        
+                        // Cập nhật trạng thái
                         delay_timer <= TRP_CYCLES - 1;
                         state <= ST_ACTIVATE;
                     end
 
                     ST_ACTIVATE: begin
-                        s_axi_awready <= 1'b0; s_axi_arready <= 1'b0;
+                        s_axi_awready <= 1'b0;
+                        s_axi_arready <= 1'b0;
                         cmd_reg <= CMD_ACTIVE;
                         ba_reg <= target_bank;
                         addr_reg <= target_row;
@@ -340,18 +361,18 @@ module axi_sdram_controller #(
                     // -----------------------------------------------------------------
                     ST_WRITE_BEAT: begin
                         s_axi_wready <= 1'b1;
+                        
                         if (s_axi_wvalid && s_axi_wready) begin
                             s_axi_wready <= 1'b0;
-                            
                             cmd_reg <= CMD_WRITE;
                             ba_reg <= target_bank;
                             // SDRAM A10 = 0 (Bỏ qua Auto-Precharge để giữ hàng mở cho beat tiếp theo)
-                            addr_reg <= {3'b000, 1'b0, 1'b0, target_col}; 
+                            addr_reg <= {3'b000, 1'b0, 1'b0, target_col};
                             
                             dq_out_reg <= s_axi_wdata;
                             dqm_reg    <= ~s_axi_wstrb; // AXI WSTRB cao = hợp lệ, SDRAM DQM thấp = hợp lệ
                             dq_oe_reg  <= 1'b1;
-
+                            
                             delay_timer <= TWR_CYCLES - 1;
                             state <= ST_WRITE_WAIT;
                         end
@@ -369,7 +390,8 @@ module axi_sdram_controller #(
                             burst_count <= burst_count + 1'b1;
                             current_addr <= current_addr + (1 << burst_size);
                             // Kiểm tra xem beat tiếp theo có vượt ra khỏi biên giới Hàng (Row Boundary) không
-                            // Nếu vượt (tràn cột), bắt buộc phải quay lại Precharge. Nếu không, tiếp tục Ghi.
+                            // Nếu vượt (tràn cột), bắt buộc phải quay lại Precharge.
+                            // Nếu không, tiếp tục Ghi.
                             if ((current_addr[9:2] + 1'b1) >= (1 << SDRAM_COL_WIDTH)) begin
                                 state <= ST_PRECHARGE;
                             end else begin
@@ -401,21 +423,24 @@ module axi_sdram_controller #(
                         s_axi_rdata  <= dq_in_wire;
                         s_axi_rresp  <= 2'b00;
                         s_axi_rlast  <= (burst_count == burst_len);
-
+                        
                         if (s_axi_rvalid && s_axi_rready) begin
                             s_axi_rvalid <= 1'b0;
                             s_axi_rlast  <= 1'b0;
                             
                             if (burst_count == burst_len) begin
-                                state <= ST_IDLE; // Kết thúc Burst
+                                state <= ST_IDLE;
+                                // Kết thúc Burst
                             end else begin
                                 burst_count <= burst_count + 1'b1;
                                 current_addr <= current_addr + (1 << burst_size);
                                 
                                 if ((current_addr[9:2] + 1'b1) >= (1 << SDRAM_COL_WIDTH)) begin
-                                    state <= ST_PRECHARGE; // Vượt biên giới Hàng
+                                    state <= ST_PRECHARGE;
+                                    // Vượt biên giới Hàng
                                 end else begin
-                                    state <= ST_READ_BEAT; // Đọc beat tiếp theo
+                                    state <= ST_READ_BEAT;
+                                    // Đọc beat tiếp theo
                                 end
                             end
                         end
