@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module axi4_to_apb4_bridge_std #(
+module axi_to_apb_bridge #(
     parameter ADDR_WIDTH = 32,
     parameter DATA_WIDTH = 32,
     parameter ID_WIDTH   = 5

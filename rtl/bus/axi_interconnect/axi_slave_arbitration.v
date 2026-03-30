@@ -1005,8 +1005,8 @@ module sa_B_channel
     // Combinational logic
     // -- FIFO WRESP filter
     assign filter_info = {AW_crossing_flag_i, AW_AxID_i};
-//    assign fifo_filter_wr_en = AW_shift_en_i & AW_crossing_flag_i;
-//    assign fifo_filter_rd_en = slv_handshake_occur & filter_condition;
+    // assign fifo_filter_wr_en = AW_shift_en_i & AW_crossing_flag_i;
+    // assign fifo_filter_rd_en = slv_handshake_occur & filter_condition;
     assign fifo_filter_wr_en = AW_shift_en_i;
     assign fifo_filter_rd_en = slv_handshake_occur; // Design constraint: slave must return BRESP in AW issue order
     // -- Write response filter

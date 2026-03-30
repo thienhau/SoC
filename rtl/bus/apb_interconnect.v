@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module apb4_interconnect_std #(
+module apb_interconnect #(
     parameter ADDR_WIDTH = 32,
     parameter DATA_WIDTH = 32,
     

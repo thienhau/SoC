@@ -321,7 +321,7 @@ module tb_jtag();
     // =================================================================
     // CÁC PERIPHERAL VÀ BỘ NHỚ GIỮ NGUYÊN (ROM, RAM, APB, FLASH...)
     // =================================================================
-    axi_rom_ip #(.ID_WIDTH(7), .ADDR_MASK(32'h0000_0FFF)) BOOT_ROM_INST (
+    axi_rom #(.ID_WIDTH(7), .ADDR_MASK(32'h0000_0FFF)) BOOT_ROM_INST (
         .clk(clk_sys), .rst_n(sys_rst_n), 
         .s_axi_awid(s0_awid), .s_axi_awaddr(s0_awaddr), .s_axi_awlen(s0_awlen), .s_axi_awsize(s0_awsize), .s_axi_awburst(s0_awburst), .s_axi_awlock(s0_awlock), .s_axi_awcache(s0_awcache), .s_axi_awprot(s0_awprot), .s_axi_awqos(s0_awqos), .s_axi_awregion(s0_awregion), .s_axi_awvalid(s0_awvalid), .s_axi_awready(s0_awready),
         .s_axi_wdata(s0_wdata), .s_axi_wstrb(s0_wstrb), .s_axi_wlast(s0_wlast), .s_axi_wvalid(s0_wvalid), .s_axi_wready(s0_wready), 
@@ -330,7 +330,7 @@ module tb_jtag();
         .s_axi_rid(s0_rid), .s_axi_rdata(s0_rdata), .s_axi_rresp(s0_rresp), .s_axi_rlast(s0_rlast), .s_axi_rvalid(s0_rvalid), .s_axi_rready(s0_rready)
     );
     
-    axi4_to_apb4_bridge_std #(.ID_WIDTH(7)) APB_BRIDGE (
+    axi_to_apb_bridge #(.ID_WIDTH(7)) APB_BRIDGE (
         .clk(clk_sys), .rst_n(sys_rst_n), 
         .s_axi_awid(s1_awid), .s_axi_awaddr(s1_awaddr), .s_axi_awlen(s1_awlen), .s_axi_awsize(s1_awsize), .s_axi_awburst(s1_awburst), .s_axi_awprot(s1_awprot), .s_axi_awvalid(s1_awvalid), .s_axi_awready(s1_awready), 
         .s_axi_wdata(s1_wdata), .s_axi_wstrb(s1_wstrb), .s_axi_wlast(s1_wlast), .s_axi_wvalid(s1_wvalid), .s_axi_wready(s1_wready), 
@@ -340,7 +340,7 @@ module tb_jtag();
         .m_apb_paddr(apb_paddr), .m_apb_pprot(), .m_apb_psel(apb_psel), .m_apb_penable(apb_penable), .m_apb_pwrite(apb_pwrite), .m_apb_pwdata(apb_pwdata), .m_apb_pstrb(apb_pstrb), .m_apb_pready(apb_pready), .m_apb_prdata(apb_prdata), .m_apb_pslverr(apb_pslverr)
     );
 
-    apb4_interconnect_std APB_BUS (
+    apb_interconnect APB_BUS (
         .clk(clk_sys), .rst_n(sys_rst_n),
         .m_paddr(apb_paddr), .m_pprot(3'b0), .m_psel(apb_psel), .m_penable(apb_penable), .m_pwrite(apb_pwrite), .m_pwdata(apb_pwdata), .m_pstrb(apb_pstrb), .m_prdata(apb_prdata), .m_pready(apb_pready), .m_pslverr(apb_pslverr),
         .s0_paddr(), .s0_pprot(), .s0_psel(sel_gpio), .s0_penable(), .s0_pwrite(), .s0_pwdata(), .s0_pstrb(), .s0_prdata(rdata_gpio), .s0_pready(ready_gpio), .s0_pslverr(err_gpio),
@@ -355,7 +355,7 @@ module tb_jtag();
         .gpio_in(32'h0), .gpio_out(gpio_out), .gpio_dir(), .gpio_irq()
     );
     
-    axi_ram_ip #(.ID_WIDTH(7), .ADDR_MASK(32'h0000_FFFF)) SYSTEM_RAM_INST (
+    axi_ram #(.ID_WIDTH(7), .ADDR_MASK(32'h0000_FFFF)) SYSTEM_RAM_INST (
         .clk(clk_sys), .rst_n(sys_rst_n), 
         .s_axi_awid(s2_awid), .s_axi_awaddr(s2_awaddr), .s_axi_awlen(s2_awlen), .s_axi_awsize(s2_awsize), .s_axi_awburst(s2_awburst), .s_axi_awlock(s2_awlock), .s_axi_awcache(s2_awcache), .s_axi_awprot(s2_awprot), .s_axi_awqos(s2_awqos), .s_axi_awregion(s2_awregion), .s_axi_awvalid(s2_awvalid), .s_axi_awready(s2_awready), 
         .s_axi_wdata(s2_wdata), .s_axi_wstrb(s2_wstrb), .s_axi_wlast(s2_wlast), .s_axi_wvalid(s2_wvalid), .s_axi_wready(s2_wready), 
@@ -364,7 +364,7 @@ module tb_jtag();
         .s_axi_rid(s2_rid), .s_axi_rdata(s2_rdata), .s_axi_rresp(s2_rresp), .s_axi_rlast(s2_rlast), .s_axi_rvalid(s2_rvalid), .s_axi_rready(s2_rready)
     );
     
-    axi4_spi_flash_xip_ip #(.ID_WIDTH(7), .ADDR_MASK(32'h00FF_FFFF)) SPI_FLASH_INST (
+    axi_spi_flash #(.ID_WIDTH(7), .ADDR_MASK(32'h00FF_FFFF)) SPI_FLASH_INST (
         .clk(clk_sys), .rst_n(sys_rst_n), 
         .s_axi_awid(s3_awid), .s_axi_awaddr(s3_awaddr), .s_axi_awlen(s3_awlen), .s_axi_awsize(s3_awsize), .s_axi_awburst(s3_awburst), .s_axi_awvalid(s3_awvalid), .s_axi_awready(s3_awready), 
         .s_axi_wdata(s3_wdata), .s_axi_wstrb(s3_wstrb), .s_axi_wlast(s3_wlast), .s_axi_wvalid(s3_wvalid), .s_axi_wready(s3_wready), 

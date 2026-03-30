@@ -52,7 +52,7 @@ module apb_watchdog #(
                     8'h00: wdt_en <= pwdata[0];
                     8'h04: wdt_cmp <= pwdata;
                     8'h08: wdt_rst_cmp <= pwdata;
-                    8'h0C: if (pwdata == 32'hFEED_D0G1) wdt_val <= 32'd0; // Khóa Feed (Clear)
+                    8'h0C: if (pwdata == 32'hFEED_FEED) wdt_val <= 32'd0; // Khóa Feed (Clear)
                     default: pslverr <= 1'b1;
                 endcase
             end

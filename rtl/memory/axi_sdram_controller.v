@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module axi4_sdram_controller_ip #(
+module axi_sdram_controller #(
     // ==========================================
     // THAM SỐ CẤU HÌNH HỆ THỐNG
     // ==========================================

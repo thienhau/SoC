@@ -100,6 +100,9 @@ module axi4lite_ctrl #(
     // Timeout counter for blocking reads
     reg [15:0] rd_timeout_cnt;
 
+    reg              ar_hold;
+    reg [ADDR_W-1:0] araddr_hold;
+
     // 1-entry "skid buffers" to decouple AW and W (AXI allows re-order) buffering
     reg               aw_hold;
     reg [ADDR_W-1:0]  awaddr_hold;
@@ -138,7 +141,7 @@ module axi4lite_ctrl #(
 
     // Address decode (byte addressing)
     // AXI4-Lite compliance: Check alignment
-// 1. Kiểm tra căn lề (Đã OK)
+    // 1. Kiểm tra căn lề (Đã OK)
     wire wr_addr_aligned = CHECK_ALIGNMENT ? (awaddr_hold[ALIGN_BITS-1:0] == {ALIGN_BITS{1'b0}}) : 1'b1;
     wire rd_addr_aligned = CHECK_ALIGNMENT ? (araddr_hold[ALIGN_BITS-1:0] == {ALIGN_BITS{1'b0}}) : 1'b1;
     
@@ -297,9 +300,6 @@ module axi4lite_ctrl #(
     // Read channel: 1 outstanding read
     // ARREADY only when not holding a pending RVALID
     // RVALID must stay asserted until RREADY, and RDATA/RRESP stable while RVALID=1
-    reg              ar_hold;
-    reg [ADDR_W-1:0] araddr_hold;
-
     assign s_axi_arready = (!ar_hold) && (!s_axi_rvalid);
 
     wire ar_hs = s_axi_arvalid && s_axi_arready;
