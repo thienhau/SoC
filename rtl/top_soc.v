@@ -3,6 +3,7 @@
 module top_soc (
     input  wire        clk,
     input  wire        rst_n,
+    input  wire        rtc_clk,
 
     // JTAG Interface
     input  wire        tck,
@@ -48,6 +49,49 @@ module top_soc (
     inout  wire [15:0] sdram_dq,
     output wire [1:0]  sdram_dqm
 );
+    // =========================================================================
+    // TÍN HIỆU NGẮT & DEBUG MODULE
+    // =========================================================================
+    // Ngắt từ CLINT/PLIC
+    wire [0:0] cpu_msip;
+    wire [0:0] cpu_mtip;
+    wire       cpu_meip;
+
+    // wire uart_irq, spi_irq, dma_irq;
+    wire [3:0]  dma_irq;
+    wire [31:1] periph_dma_req = 31'd0; // Nối với cờ "TX ready" / "RX ready" của UART/SPI sau
+    wire [31:1] periph_dma_clr;
+
+    wire [31:0] plic_irq_src;
+    assign plic_irq_src = {
+        24'd0,         // Bit [31:8]: Trống
+        dma_irq,       // Bit [7:4]: Ngắt của 4 kênh DMA
+        1'b0,          // Bit 3: Ví dụ DMA (Nếu chưa có thì để 1'b0)
+        1'b0,          // Bit 2: Ví dụ SPI (Nếu chưa có thì để 1'b0)
+        1'b0,          // Bit 1: Ví dụ UART (Thay bằng dây uart_irq nếu có)
+        1'b0           // Bit 0: LUÔN LUÔN BẰNG 0 (Theo chuẩn RISC-V PLIC)
+    };
+
+    // Dây kết nối giữa Debug Module (DM) và CPU
+    wire        dbg_halt_req;
+    wire        dbg_resume_req;
+    wire        dbg_halted;
+    wire [15:0] dbg_reg_read_addr;
+    wire [31:0] dbg_reg_read_data;
+    wire        dbg_reg_write_en;
+    wire [15:0] dbg_reg_write_addr;
+    wire [31:0] dbg_reg_write_data;
+    wire        ndmreset_req;
+
+    // Dây kết nối giữa DM (System Bus Access) và AXI Master wrapper
+    wire        sba_req;
+    wire        sba_ack;
+    wire [1:0]  sba_op;
+    wire [1:0]  sba_size;
+    wire [1:0]  sba_resp;
+    wire [31:0] sba_addr;
+    wire [31:0] sba_wdata;
+    wire [31:0] sba_rdata;
 
     // =========================================================================
     // 1. DÂY TÍN HIỆU GIỮA CPU VÀ CACHES
@@ -62,30 +106,53 @@ module top_soc (
     // =========================================================================
     // 2. KHỞI TẠO CPU LÕI RISC-V
     // =========================================================================
+    wire reset_cpu_n = rst_n & ~ndmreset_req; // Hỗ trợ Non-Debug Module Reset từ OpenOCD
+
     riscv_pipeline u_core (
         .clk             (clk),
-        .rst_n           (rst_n),
-        .inst_req        (cpu_inst_req),
-        .inst_addr       (cpu_inst_addr),
-        .inst_data       (cpu_inst_data),
-        .inst_hit        (cpu_inst_hit),
-        .inst_stall      (cpu_inst_stall),
-        .data_rd_req     (cpu_data_rd_req),
-        .data_wr_req     (cpu_data_wr_req),
-        .data_addr       (cpu_data_addr),
-        .data_wdata      (cpu_data_wdata),
-        .data_rdata      (cpu_data_rdata),
-        .data_size       (cpu_data_size),
-        .data_unsigned   (cpu_data_unsigned),
-        .data_hit        (cpu_data_hit),
-        .data_stall      (cpu_data_stall)
+        .reset_n         (reset_cpu_n),
+        .riscv_start     (1'b1),               // Tự động chạy khi có clock
+        .meip_i          (cpu_meip),           // External Interrupt (từ PLIC)
+        .msip_i          (cpu_msip[0]),        // Software Interrupt (từ CLINT)
+        .mtip_i          (cpu_mtip[0]),        // Timer Interrupt (từ CLINT)
+        .reset_vector_in (32'h0001_0000),      // Trỏ về ROM
+        .riscv_done      (),                   // Bỏ trống nếu không dùng
+
+        // ICache interface
+        .icache_read_req (cpu_inst_req),
+        .icache_addr     (cpu_inst_addr),
+        .icache_read_data(cpu_inst_data),
+        .icache_hit      (cpu_inst_hit),
+        .icache_stall    (cpu_inst_stall),
+        
+        // DCache interface
+        .dcache_read_req  (cpu_data_rd_req),
+        .dcache_write_req (cpu_data_wr_req),
+        .dcache_addr      (cpu_data_addr),
+        .dcache_write_data(cpu_data_wdata),
+        .dcache_read_data (cpu_data_rdata),
+        .dcache_hit       (cpu_data_hit),
+        .dcache_stall     (cpu_data_stall),
+        .mem_size_top     (cpu_data_size),
+        .mem_unsigned_top (cpu_data_unsigned),
+        .wfi_sleep_out    (),
+
+        // Debug Module Interface
+        .dbg_halt_req       (dbg_halt_req),
+        .dbg_resume_req     (dbg_resume_req),
+        .dbg_halted         (dbg_halted),
+        .dbg_reg_read_addr  (dbg_reg_read_addr),
+        .dbg_reg_read_data  (dbg_reg_read_data),
+        .dbg_reg_write_en   (dbg_reg_write_en),
+        .dbg_reg_write_addr (dbg_reg_write_addr),
+        .dbg_reg_write_data (dbg_reg_write_data)
     );
 
     // =========================================================================
-    // 3. KHAI BÁO CÁC KÊNH AXI (3 MASTERS, 5 SLAVES)
+    // 3. KHAI BÁO CÁC KÊNH AXI (4 MASTERS, 6 SLAVES)
     // =========================================================================
-    localparam MST_AMT = 3;
-    localparam SLV_AMT = 5;
+    localparam MST_AMT = 4;
+    localparam SLV_AMT = 6;
 
     // Các tín hiệu Master phẳng (Flattened arrays cho AXI Interconnect)
     wire [MST_AMT*5-1:0]  m_axi_awid;
@@ -146,42 +213,49 @@ module top_soc (
     wire [4:0]  m2_arid;    wire [31:0] m2_araddr;  wire [7:0]  m2_arlen;   wire [2:0]  m2_arsize;  wire [1:0]  m2_arburst; wire [2:0]  m2_arprot;  wire m2_arvalid; wire m2_arready;
     wire [4:0]  m2_rid;     wire [31:0] m2_rdata;   wire [1:0]  m2_rresp;   wire        m2_rlast;   wire m2_rvalid; wire m2_rready;
 
+    // M3: DMA
+    wire [4:0]  m3_awid;    wire [31:0] m3_awaddr;  wire [7:0]  m3_awlen;   wire [2:0]  m3_awsize;  wire [1:0]  m3_awburst; wire [2:0]  m3_awprot;  wire m3_awvalid; wire m3_awready;
+    wire [31:0] m3_wdata;   wire [3:0]  m3_wstrb;   wire        m3_wlast;   wire        m3_wvalid;  wire m3_wready;
+    wire [4:0]  m3_bid;     wire [1:0]  m3_bresp;   wire        m3_bvalid;  wire        m3_bready;
+    wire [4:0]  m3_arid;    wire [31:0] m3_araddr;  wire [7:0]  m3_arlen;   wire [2:0]  m3_arsize;  wire [1:0]  m3_arburst; wire [2:0]  m3_arprot;  wire m3_arvalid; wire m3_arready;
+    wire [4:0]  m3_rid;     wire [31:0] m3_rdata;   wire [1:0]  m3_rresp;   wire        m3_rlast;   wire m3_rvalid; wire m3_rready;
+
     // Map các Master đơn lẻ vào Bus Mảng
-    assign m_axi_awid    = {m2_awid,    m1_awid,    m0_awid};
-    assign m_axi_awaddr  = {m2_awaddr,  m1_awaddr,  m0_awaddr};
-    assign m_axi_awlen   = {m2_awlen,   m1_awlen,   m0_awlen};
-    assign m_axi_awsize  = {m2_awsize,  m1_awsize,  m0_awsize};
-    assign m_axi_awburst = {m2_awburst, m1_awburst, m0_awburst};
-    assign m_axi_awprot  = {m2_awprot,  m1_awprot,  m0_awprot};
-    assign m_axi_awvalid = {m2_awvalid, m1_awvalid, m0_awvalid};
-    assign {m2_awready, m1_awready, m0_awready} = m_axi_awready;
+    assign m_axi_awid    = {m3_awid, m2_awid,    m1_awid,    m0_awid};
+    assign m_axi_awaddr  = {m3_awaddr, m2_awaddr,  m1_awaddr,  m0_awaddr};
+    assign m_axi_awlen   = {m3_awlen, m2_awlen,   m1_awlen,   m0_awlen};
+    assign m_axi_awsize  = {m3_awsize, m2_awsize,  m1_awsize,  m0_awsize};
+    assign m_axi_awburst = {m3_awburst, m2_awburst, m1_awburst, m0_awburst};
+    assign m_axi_awprot  = {m3_awprot, m2_awprot,  m1_awprot,  m0_awprot};
+    assign m_axi_awvalid = {m3_awvalid, m2_awvalid, m1_awvalid, m0_awvalid};
+    assign {m3_awready, m2_awready, m1_awready, m0_awready} = m_axi_awready;
 
-    assign m_axi_wdata   = {m2_wdata,  m1_wdata,  m0_wdata};
-    assign m_axi_wstrb   = {m2_wstrb,  m1_wstrb,  m0_wstrb};
-    assign m_axi_wlast   = {m2_wlast,  m1_wlast,  m0_wlast};
-    assign m_axi_wvalid  = {m2_wvalid, m1_wvalid, m0_wvalid};
-    assign {m2_wready, m1_wready, m0_wready} = m_axi_wready;
+    assign m_axi_wdata   = {m3_wdata, m2_wdata,  m1_wdata,  m0_wdata};
+    assign m_axi_wstrb   = {m3_wstrb, m2_wstrb,  m1_wstrb,  m0_wstrb};
+    assign m_axi_wlast   = {m3_wlast, m2_wlast,  m1_wlast,  m0_wlast};
+    assign m_axi_wvalid  = {m3_wvalid, m2_wvalid, m1_wvalid, m0_wvalid};
+    assign {m3_wready, m2_wready, m1_wready, m0_wready} = m_axi_wready;
 
-    assign m_axi_bready  = {m2_bready, m1_bready, m0_bready};
-    assign {m2_bid, m1_bid, m0_bid}             = m_axi_bid;
-    assign {m2_bresp, m1_bresp, m0_bresp}       = m_axi_bresp;
-    assign {m2_bvalid, m1_bvalid, m0_bvalid}    = m_axi_bvalid;
+    assign m_axi_bready  = {m3_bready, m2_bready, m1_bready, m0_bready};
+    assign {m3_bid, m2_bid, m1_bid, m0_bid}             = m_axi_bid;
+    assign {m3_bresp, m2_bresp, m1_bresp, m0_bresp}       = m_axi_bresp;
+    assign {m3_bvalid, m2_bvalid, m1_bvalid, m0_bvalid}    = m_axi_bvalid;
 
-    assign m_axi_arid    = {m2_arid,    m1_arid,    m0_arid};
-    assign m_axi_araddr  = {m2_araddr,  m1_araddr,  m0_araddr};
-    assign m_axi_arlen   = {m2_arlen,   m1_arlen,   m0_arlen};
-    assign m_axi_arsize  = {m2_arsize,  m1_arsize,  m0_arsize};
-    assign m_axi_arburst = {m2_arburst, m1_arburst, m0_arburst};
-    assign m_axi_arprot  = {m2_arprot,  m1_arprot,  m0_arprot};
-    assign m_axi_arvalid = {m2_arvalid, m1_arvalid, m0_arvalid};
-    assign {m2_arready, m1_arready, m0_arready} = m_axi_arready;
+    assign m_axi_arid    = {m3_arid, m2_arid,    m1_arid,    m0_arid};
+    assign m_axi_araddr  = {m3_araddr, m2_araddr,  m1_araddr,  m0_araddr};
+    assign m_axi_arlen   = {m3_arlen, m2_arlen,   m1_arlen,   m0_arlen};
+    assign m_axi_arsize  = {m3_arsize, m2_arsize,  m1_arsize,  m0_arsize};
+    assign m_axi_arburst = {m3_arburst, m2_arburst, m1_arburst, m0_arburst};
+    assign m_axi_arprot  = {m3_arprot, m2_arprot,  m1_arprot,  m0_arprot};
+    assign m_axi_arvalid = {m3_arvalid, m2_arvalid, m1_arvalid, m0_arvalid};
+    assign {m3_arready, m2_arready, m1_arready, m0_arready} = m_axi_arready;
 
-    assign m_axi_rready  = {m2_rready, m1_rready, m0_rready};
-    assign {m2_rid, m1_rid, m0_rid}             = m_axi_rid;
-    assign {m2_rdata, m1_rdata, m0_rdata}       = m_axi_rdata;
-    assign {m2_rresp, m1_rresp, m0_rresp}       = m_axi_rresp;
-    assign {m2_rlast, m1_rlast, m0_rlast}       = m_axi_rlast;
-    assign {m2_rvalid, m1_rvalid, m0_rvalid}    = m_axi_rvalid;
+    assign m_axi_rready  = {m3_rready, m2_rready, m1_rready, m0_rready};
+    assign {m3_rid, m2_rid, m1_rid, m0_rid}             = m_axi_rid;
+    assign {m3_rdata, m2_rdata, m1_rdata, m0_rdata}       = m_axi_rdata;
+    assign {m3_rresp, m2_rresp, m1_rresp, m0_rresp}       = m_axi_rresp;
+    assign {m3_rlast, m2_rlast, m1_rlast, m0_rlast}       = m_axi_rlast;
+    assign {m3_rvalid, m2_rvalid, m1_rvalid, m0_rvalid}    = m_axi_rvalid;
 
     // Tín hiệu AXI Slave phẳng
     wire [SLV_AMT*7-1:0]  s_axi_awid; // TRANS_SLV_ID_W = MST_ID_W(2) + TRANS_MST_ID_W(5) = 7
@@ -220,73 +294,78 @@ module top_soc (
     wire [SLV_AMT-1:0]    s_axi_rvalid;
     wire [SLV_AMT-1:0]    s_axi_rready;
 
-    // S0: ROM, S1: RAM, S2: SPI Flash, S3: SDRAM, S4: APB Bridge
+    // S0: ROM, S1: RAM, S2: SPI Flash, S3: SDRAM, S4: APB Bridge, S5: CLINT
     wire [6:0] s0_awid; wire [31:0] s0_awaddr; wire [7:0] s0_awlen; wire [2:0] s0_awsize; wire [1:0] s0_awburst; wire [2:0] s0_awprot; wire s0_awvalid; wire s0_awready;
     wire [6:0] s1_awid; wire [31:0] s1_awaddr; wire [7:0] s1_awlen; wire [2:0] s1_awsize; wire [1:0] s1_awburst; wire [2:0] s1_awprot; wire s1_awvalid; wire s1_awready;
     wire [6:0] s2_awid; wire [31:0] s2_awaddr; wire [7:0] s2_awlen; wire [2:0] s2_awsize; wire [1:0] s2_awburst; wire [2:0] s2_awprot; wire s2_awvalid; wire s2_awready;
     wire [6:0] s3_awid; wire [31:0] s3_awaddr; wire [7:0] s3_awlen; wire [2:0] s3_awsize; wire [1:0] s3_awburst; wire [2:0] s3_awprot; wire s3_awvalid; wire s3_awready;
     wire [6:0] s4_awid; wire [31:0] s4_awaddr; wire [7:0] s4_awlen; wire [2:0] s4_awsize; wire [1:0] s4_awburst; wire [2:0] s4_awprot; wire s4_awvalid; wire s4_awready;
-
+    wire [6:0] s5_awid; wire [31:0] s5_awaddr; wire [7:0] s5_awlen; wire [2:0] s5_awsize; wire [1:0] s5_awburst; wire [2:0] s5_awprot; wire s5_awvalid; wire s5_awready;
+    
     wire [31:0] s0_wdata; wire [3:0] s0_wstrb; wire s0_wlast; wire s0_wvalid; wire s0_wready;
     wire [31:0] s1_wdata; wire [3:0] s1_wstrb; wire s1_wlast; wire s1_wvalid; wire s1_wready;
     wire [31:0] s2_wdata; wire [3:0] s2_wstrb; wire s2_wlast; wire s2_wvalid; wire s2_wready;
     wire [31:0] s3_wdata; wire [3:0] s3_wstrb; wire s3_wlast; wire s3_wvalid; wire s3_wready;
     wire [31:0] s4_wdata; wire [3:0] s4_wstrb; wire s4_wlast; wire s4_wvalid; wire s4_wready;
+    wire [31:0] s5_wdata; wire [3:0] s5_wstrb; wire s5_wlast; wire s5_wvalid; wire s5_wready;
 
     wire [6:0] s0_bid; wire [1:0] s0_bresp; wire s0_bvalid; wire s0_bready;
     wire [6:0] s1_bid; wire [1:0] s1_bresp; wire s1_bvalid; wire s1_bready;
     wire [6:0] s2_bid; wire [1:0] s2_bresp; wire s2_bvalid; wire s2_bready;
     wire [6:0] s3_bid; wire [1:0] s3_bresp; wire s3_bvalid; wire s3_bready;
     wire [6:0] s4_bid; wire [1:0] s4_bresp; wire s4_bvalid; wire s4_bready;
+    wire [6:0] s5_bid; wire [1:0] s5_bresp; wire s5_bvalid; wire s5_bready;
 
     wire [6:0] s0_arid; wire [31:0] s0_araddr; wire [7:0] s0_arlen; wire [2:0] s0_arsize; wire [1:0] s0_arburst; wire [2:0] s0_arprot; wire s0_arvalid; wire s0_arready;
     wire [6:0] s1_arid; wire [31:0] s1_araddr; wire [7:0] s1_arlen; wire [2:0] s1_arsize; wire [1:0] s1_arburst; wire [2:0] s1_arprot; wire s1_arvalid; wire s1_arready;
     wire [6:0] s2_arid; wire [31:0] s2_araddr; wire [7:0] s2_arlen; wire [2:0] s2_arsize; wire [1:0] s2_arburst; wire [2:0] s2_arprot; wire s2_arvalid; wire s2_arready;
     wire [6:0] s3_arid; wire [31:0] s3_araddr; wire [7:0] s3_arlen; wire [2:0] s3_arsize; wire [1:0] s3_arburst; wire [2:0] s3_arprot; wire s3_arvalid; wire s3_arready;
     wire [6:0] s4_arid; wire [31:0] s4_araddr; wire [7:0] s4_arlen; wire [2:0] s4_arsize; wire [1:0] s4_arburst; wire [2:0] s4_arprot; wire s4_arvalid; wire s4_arready;
+    wire [6:0] s5_arid; wire [31:0] s5_araddr; wire [7:0] s5_arlen; wire [2:0] s5_arsize; wire [1:0] s5_arburst; wire [2:0] s5_arprot; wire s5_arvalid; wire s5_arready;
 
     wire [6:0] s0_rid; wire [31:0] s0_rdata; wire [1:0] s0_rresp; wire s0_rlast; wire s0_rvalid; wire s0_rready;
     wire [6:0] s1_rid; wire [31:0] s1_rdata; wire [1:0] s1_rresp; wire s1_rlast; wire s1_rvalid; wire s1_rready;
     wire [6:0] s2_rid; wire [31:0] s2_rdata; wire [1:0] s2_rresp; wire s2_rlast; wire s2_rvalid; wire s2_rready;
     wire [6:0] s3_rid; wire [31:0] s3_rdata; wire [1:0] s3_rresp; wire s3_rlast; wire s3_rvalid; wire s3_rready;
     wire [6:0] s4_rid; wire [31:0] s4_rdata; wire [1:0] s4_rresp; wire s4_rlast; wire s4_rvalid; wire s4_rready;
+    wire [6:0] s5_rid; wire [31:0] s5_rdata; wire [1:0] s5_rresp; wire s5_rlast; wire s5_rvalid; wire s5_rready;
 
     // Map Slaves ra mảng phẳng
-    assign {s4_awready, s3_awready, s2_awready, s1_awready, s0_awready} = s_axi_awready;
-    assign s_axi_awid    = {s4_awid,    s3_awid,    s2_awid,    s1_awid,    s0_awid};
-    assign s_axi_awaddr  = {s4_awaddr,  s3_awaddr,  s2_awaddr,  s1_awaddr,  s0_awaddr};
-    assign s_axi_awlen   = {s4_awlen,   s3_awlen,   s2_awlen,   s1_awlen,   s0_awlen};
-    assign s_axi_awsize  = {s4_awsize,  s3_awsize,  s2_awsize,  s1_awsize,  s0_awsize};
-    assign s_axi_awburst = {s4_awburst, s3_awburst, s2_awburst, s1_awburst, s0_awburst};
-    assign s_axi_awprot  = {s4_awprot,  s3_awprot,  s2_awprot,  s1_awprot,  s0_awprot};
-    assign s_axi_awvalid = {s4_awvalid, s3_awvalid, s2_awvalid, s1_awvalid, s0_awvalid};
+    assign {s5_awready, s4_awready, s3_awready, s2_awready, s1_awready, s0_awready} = s_axi_awready;
+    assign s_axi_awid    = {s5_awid, s4_awid,    s3_awid,    s2_awid,    s1_awid,    s0_awid};
+    assign s_axi_awaddr  = {s5_awaddr, s4_awaddr,  s3_awaddr,  s2_awaddr,  s1_awaddr,  s0_awaddr};
+    assign s_axi_awlen   = {s5_awlen, s4_awlen,   s3_awlen,   s2_awlen,   s1_awlen,   s0_awlen};
+    assign s_axi_awsize  = {s5_awsize, s4_awsize,  s3_awsize,  s2_awsize,  s1_awsize,  s0_awsize};
+    assign s_axi_awburst = {s5_awburst, s4_awburst, s3_awburst, s2_awburst, s1_awburst, s0_awburst};
+    assign s_axi_awprot  = {s5_awprot, s4_awprot,  s3_awprot,  s2_awprot,  s1_awprot,  s0_awprot};
+    assign s_axi_awvalid = {s5_awvalid, s4_awvalid, s3_awvalid, s2_awvalid, s1_awvalid, s0_awvalid};
 
-    assign {s4_wready, s3_wready, s2_wready, s1_wready, s0_wready} = s_axi_wready;
-    assign s_axi_wdata   = {s4_wdata,  s3_wdata,  s2_wdata,  s1_wdata,  s0_wdata};
-    assign s_axi_wstrb   = {s4_wstrb,  s3_wstrb,  s2_wstrb,  s1_wstrb,  s0_wstrb};
-    assign s_axi_wlast   = {s4_wlast,  s3_wlast,  s2_wlast,  s1_wlast,  s0_wlast};
-    assign s_axi_wvalid  = {s4_wvalid, s3_wvalid, s2_wvalid, s1_wvalid, s0_wvalid};
+    assign {s5_wready, s4_wready, s3_wready, s2_wready, s1_wready, s0_wready} = s_axi_wready;
+    assign s_axi_wdata   = {s5_wdata, s4_wdata,  s3_wdata,  s2_wdata,  s1_wdata,  s0_wdata};
+    assign s_axi_wstrb   = {s5_wstrb, s4_wstrb,  s3_wstrb,  s2_wstrb,  s1_wstrb,  s0_wstrb};
+    assign s_axi_wlast   = {s5_wlast, s4_wlast,  s3_wlast,  s2_wlast,  s1_wlast,  s0_wlast};
+    assign s_axi_wvalid  = {s5_wvalid, s4_wvalid, s3_wvalid, s2_wvalid, s1_wvalid, s0_wvalid};
 
-    assign s_axi_bready  = {s4_bready, s3_bready, s2_bready, s1_bready, s0_bready};
-    assign {s4_bid, s3_bid, s2_bid, s1_bid, s0_bid}             = s_axi_bid;
-    assign {s4_bresp, s3_bresp, s2_bresp, s1_bresp, s0_bresp}   = s_axi_bresp;
-    assign {s4_bvalid, s3_bvalid, s2_bvalid, s1_bvalid, s0_bvalid} = s_axi_bvalid;
+    assign s_axi_bready  = {s5_bready, s4_bready, s3_bready, s2_bready, s1_bready, s0_bready};
+    assign {s5_bid, s4_bid, s3_bid, s2_bid, s1_bid, s0_bid}             = s_axi_bid;
+    assign {s5_bresp, s4_bresp, s3_bresp, s2_bresp, s1_bresp, s0_bresp}   = s_axi_bresp;
+    assign {s5_bvalid, s4_bvalid, s3_bvalid, s2_bvalid, s1_bvalid, s0_bvalid} = s_axi_bvalid;
 
-    assign {s4_arready, s3_arready, s2_arready, s1_arready, s0_arready} = s_axi_arready;
-    assign s_axi_arid    = {s4_arid,    s3_arid,    s2_arid,    s1_arid,    s0_arid};
-    assign s_axi_araddr  = {s4_araddr,  s3_araddr,  s2_araddr,  s1_araddr,  s0_araddr};
-    assign s_axi_arlen   = {s4_arlen,   s3_arlen,   s2_arlen,   s1_arlen,   s0_arlen};
-    assign s_axi_arsize  = {s4_arsize,  s3_arsize,  s2_arsize,  s1_arsize,  s0_arsize};
-    assign s_axi_arburst = {s4_arburst, s3_arburst, s2_arburst, s1_arburst, s0_arburst};
-    assign s_axi_arprot  = {s4_arprot,  s3_arprot,  s2_arprot,  s1_arprot,  s0_arprot};
-    assign s_axi_arvalid = {s4_arvalid, s3_arvalid, s2_arvalid, s1_arvalid, s0_arvalid};
+    assign {s5_arready, s4_arready, s3_arready, s2_arready, s1_arready, s0_arready} = s_axi_arready;
+    assign s_axi_arid    = {s5_arid, s4_arid,    s3_arid,    s2_arid,    s1_arid,    s0_arid};
+    assign s_axi_araddr  = {s5_araddr, s4_araddr,  s3_araddr,  s2_araddr,  s1_araddr,  s0_araddr};
+    assign s_axi_arlen   = {s5_arlen, s4_arlen,   s3_arlen,   s2_arlen,   s1_arlen,   s0_arlen};
+    assign s_axi_arsize  = {s5_arsize, s4_arsize,  s3_arsize,  s2_arsize,  s1_arsize,  s0_arsize};
+    assign s_axi_arburst = {s5_arburst, s4_arburst, s3_arburst, s2_arburst, s1_arburst, s0_arburst};
+    assign s_axi_arprot  = {s5_arprot, s4_arprot,  s3_arprot,  s2_arprot,  s1_arprot,  s0_arprot};
+    assign s_axi_arvalid = {s5_arvalid, s4_arvalid, s3_arvalid, s2_arvalid, s1_arvalid, s0_arvalid};
 
-    assign s_axi_rready  = {s4_rready, s3_rready, s2_rready, s1_rready, s0_rready};
-    assign {s4_rid, s3_rid, s2_rid, s1_rid, s0_rid}             = s_axi_rid;
-    assign {s4_rdata, s3_rdata, s2_rdata, s1_rdata, s0_rdata}   = s_axi_rdata;
-    assign {s4_rresp, s3_rresp, s2_rresp, s1_rresp, s0_rresp}   = s_axi_rresp;
-    assign {s4_rlast, s3_rlast, s2_rlast, s1_rlast, s0_rlast}   = s_axi_rlast;
-    assign {s4_rvalid, s3_rvalid, s2_rvalid, s1_rvalid, s0_rvalid} = s_axi_rvalid;
+    assign s_axi_rready  = {s5_rready, s4_rready, s3_rready, s2_rready, s1_rready, s0_rready};
+    assign {s5_rid, s4_rid, s3_rid, s2_rid, s1_rid, s0_rid}             = s_axi_rid;
+    assign {s5_rdata, s4_rdata, s3_rdata, s2_rdata, s1_rdata, s0_rdata}   = s_axi_rdata;
+    assign {s5_rresp, s4_rresp, s3_rresp, s2_rresp, s1_rresp, s0_rresp}   = s_axi_rresp;
+    assign {s5_rlast, s4_rlast, s3_rlast, s2_rlast, s1_rlast, s0_rlast}   = s_axi_rlast;
+    assign {s5_rvalid, s4_rvalid, s3_rvalid, s2_rvalid, s1_rvalid, s0_rvalid} = s_axi_rvalid;
 
     // =========================================================================
     // 4. INSTANTIATE CÁC MASTER MODULES
@@ -371,8 +450,8 @@ module top_soc (
     wire [6:0]  dmi_req_addr;
     wire [31:0] dmi_req_data, dmi_resp_data;
     wire [1:0]  dmi_req_op, dmi_resp_op;
-    wire        dtm_ack;
     
+    // Tầng 1: JTAG DTM (Giao tiếp vật lý JTAG)
     rv_jtag_dtm u_jtag_dtm (
         .tck             (tck),
         .trst_n          (trst_n),
@@ -383,23 +462,64 @@ module top_soc (
         .dmi_req_addr    (dmi_req_addr),
         .dmi_req_data    (dmi_req_data),
         .dmi_req_op      (dmi_req_op),
-        .dmi_resp_ready  (1'b1),
-        .dmi_resp_valid  (dtm_ack), // Đấu qua ack
+        .dmi_resp_ready  (dmi_resp_ready),
+        .dmi_resp_valid  (dmi_resp_valid),
         .dmi_resp_data   (dmi_resp_data),
         .dmi_resp_op     (dmi_resp_op)
     );
 
+    // Tầng 2: Debug Module (Xử lý lệnh Halt/Resume/Regs và System Bus)
+    rv_debug_module_sba u_debug_module (
+        .clk_sys            (clk),
+        .rst_sys_n          (rst_n),
+        
+        // Nối với JTAG DTM
+        .dmi_req_valid      (dmi_req_valid),
+        .dmi_req_addr       (dmi_req_addr),
+        .dmi_req_data       (dmi_req_data),
+        .dmi_req_op         (dmi_req_op),
+        .dmi_resp_ready     (dmi_resp_ready),
+        .dmi_resp_valid     (dmi_resp_valid),
+        .dmi_resp_data      (dmi_resp_data),
+        .dmi_resp_op        (dmi_resp_op),
+
+        // Nối System Bus Access (SBA) sang AXI Wrapper
+        .axi_req            (sba_req),
+        .axi_op             (sba_op),
+        .axi_size           (sba_size),
+        .axi_addr           (sba_addr),
+        .axi_wdata          (sba_wdata),
+        .axi_ack            (sba_ack),
+        .axi_rdata          (sba_rdata),
+        .axi_resp           (sba_resp),
+
+        // Nối sang CPU (Điều khiển Core & Registers)
+        .cpu_halt_req       (dbg_halt_req),
+        .cpu_resume_req     (dbg_resume_req),
+        .cpu_halted         (dbg_halted),
+        .cpu_reg_read_addr  (dbg_reg_read_addr),
+        .cpu_reg_read_data  (dbg_reg_read_data),
+        .cpu_reg_write_en   (dbg_reg_write_en),
+        .cpu_reg_write_addr (dbg_reg_write_addr),
+        .cpu_reg_write_data (dbg_reg_write_data),
+        .ndmreset_req       (ndmreset_req)
+    );
+
+    // Tầng 3: AXI Master Wrapper (Đưa SBA vào bus hệ thống làm M2)
     dtm_axi_master u_dtm_axi (
         .clk_sys         (clk),
         .rst_sys_n       (rst_n),
-        .i_req           (dmi_req_valid),
-        .i_op            (dmi_req_op),
-        .i_size          (2'b10), // 32-bit
-        .i_addr          ({23'b0, dmi_req_addr, 2'b0}),
-        .i_wdata         (dmi_req_data),
-        .o_ack           (dtm_ack),
-        .o_resp          (dmi_resp_op),
-        .o_rdata         (dmi_resp_data),
+        
+        // Nhận lệnh từ SBA của Debug Module thay vì JTAG
+        .i_req           (sba_req),
+        .i_op            (sba_op),
+        .i_size          (sba_size),
+        .i_addr          (sba_addr),
+        .i_wdata         (sba_wdata),
+        .o_ack           (sba_ack),
+        .o_resp          (sba_resp),
+        .o_rdata         (sba_rdata),
+        
         // M-AXI
         .m_axi_awid      (m2_awid),
         .m_axi_awaddr    (m2_awaddr),
@@ -436,12 +556,17 @@ module top_soc (
     axi_interconnect #(
         .MST_AMT(MST_AMT), 
         .SLV_AMT(SLV_AMT),
+        // Trọng số ưu tiên (MST_WEIGHT): 4 Master tương ứng 4 x 32-bit = 128 bit
+        // Quy tắc: Số càng to ưu tiên càng cao.
+        // Ví dụ: DMA (5) > DCache (4) > ICache (3) > Debug (1)
+        .MST_WEIGHT (128'h00000005_00000004_00000003_00000001),
         // Gán địa chỉ Base và Mask cho 5 Slave
         // S0: ROM (0x0000_0000 - 64KB), S1: RAM (0x2000_0000 - 128KB)
         // S2: Flash (0x3000_0000 - 16MB), S3: SDRAM (0x8000_0000 - 64MB)
         // S4: APB Bridge (0x4000_0000 - 1MB)
-        .SLV_BASE_ADDR (160'h4000_0000_8000_0000_3000_0000_2000_0000_0000_0000),
-        .SLV_ADDR_MASK (160'hFFF0_0000_FC00_0000_FF00_0000_FFFE_0000_FFFF_0000)
+        // S5: CLINT (0x0200_0000 - 64KB)
+        .SLV_BASE_ADDR (192'h0200_0000_4000_0000_8000_0000_3000_0000_2000_0000_0000_0000),
+        .SLV_ADDR_MASK (192'hFFFF_0000_FFF0_0000_FC00_0000_FF00_0000_FFFE_0000_FFFF_0000)
     ) u_axi_interconnect (
         .ACLK_i          (clk),
         .ARESETn_i       (rst_n),
@@ -557,9 +682,7 @@ module top_soc (
         .s_axi_rid(s3_rid), .s_axi_rdata(s3_rdata), .s_axi_rresp(s3_rresp), .s_axi_rlast(s3_rlast), .s_axi_rvalid(s3_rvalid), .s_axi_rready(s3_rready)
     );
 
-    // =========================================================================
-    // 7. AXI TO APB BRIDGE VÀ APB INTERCONNECT
-    // =========================================================================
+    // S4: AXI to APB Bridge
     wire [31:0] apb_paddr, apb_pwdata, apb_prdata;
     wire [3:0]  apb_pstrb;
     wire [2:0]  apb_pprot;
@@ -577,14 +700,70 @@ module top_soc (
         .m_apb_pready(apb_pready), .m_apb_prdata(apb_prdata), .m_apb_pslverr(apb_pslverr)
     );
 
-    // Wires cho 8 APB Slaves
-    wire [31:0] paddr_0, paddr_1, paddr_2, paddr_3, paddr_4, paddr_5, paddr_6, paddr_7;
-    wire [31:0] pwdata_0, pwdata_1, pwdata_2, pwdata_3, pwdata_4, pwdata_5, pwdata_6, pwdata_7;
-    wire [31:0] prdata_0, prdata_1, prdata_2, prdata_3, prdata_4, prdata_5, prdata_6, prdata_7;
-    wire psel_0, psel_1, psel_2, psel_3, psel_4, psel_5, psel_6, psel_7;
-    wire penable_0, penable_1, penable_2, penable_3, penable_4, penable_5, penable_6, penable_7;
-    wire pwrite_0, pwrite_1, pwrite_2, pwrite_3, pwrite_4, pwrite_5, pwrite_6, pwrite_7;
-    wire pready_0, pready_1, pready_2, pready_3, pready_4, pready_5, pready_6, pready_7;
+    wire [0:0] cpu_msip;
+    wire [0:0] cpu_mtip;
+
+    // S5: CLINT
+    axi_clint #(
+        .NUM_HARTS(1) // SoC của bạn hiện có 1 lõi
+    ) u_axi_clint (
+        .clk_i           (clk),
+        .rst_ni          (rst_n),
+        .rtc_clk_i       (rtc_clk),
+
+        // AXI4 Slave Interface (Nối với S5)
+        .s_axi_awid      (s5_awid),
+        .s_axi_awaddr    (s5_awaddr),
+        .s_axi_awlen     (s5_awlen),
+        .s_axi_awsize    (s5_awsize),
+        .s_axi_awburst   (s5_awburst),
+        .s_axi_awprot    (s5_awprot),
+        .s_axi_awvalid   (s5_awvalid),
+        .s_axi_awready   (s5_awready),
+
+        .s_axi_wdata     (s5_wdata),
+        .s_axi_wstrb     (s5_wstrb),
+        .s_axi_wlast     (s5_wlast),
+        .s_axi_wvalid    (s5_wvalid),
+        .s_axi_wready    (s5_wready),
+
+        .s_axi_bid       (s5_bid),
+        .s_axi_bresp     (s5_bresp),
+        .s_axi_bvalid    (s5_bvalid),
+        .s_axi_bready    (s5_bready),
+
+        .s_axi_arid      (s5_arid),
+        .s_axi_araddr    (s5_araddr),
+        .s_axi_arlen     (s5_arlen),
+        .s_axi_arsize    (s5_arsize),
+        .s_axi_arburst   (s5_arburst),
+        .s_axi_arprot    (s5_arprot),
+        .s_axi_arvalid   (s5_arvalid),
+        .s_axi_arready   (s5_arready),
+
+        .s_axi_rid       (s5_rid),
+        .s_axi_rdata     (s5_rdata),
+        .s_axi_rresp     (s5_rresp),
+        .s_axi_rlast     (s5_rlast),
+        .s_axi_rvalid    (s5_rvalid),
+        .s_axi_rready    (s5_rready),
+
+        // Xuất tín hiệu ngắt ra CPU
+        .msip_o          (cpu_msip),
+        .mtip_o          (cpu_mtip)
+    );
+
+    // =========================================================================
+    // 7. APB INTERCONNECT
+    // =========================================================================
+    // Wires cho 10 APB Slaves
+    wire [31:0] paddr_0, paddr_1, paddr_2, paddr_3, paddr_4, paddr_5, paddr_6, paddr_7, paddr_8, paddr_9;
+    wire [31:0] pwdata_0, pwdata_1, pwdata_2, pwdata_3, pwdata_4, pwdata_5, pwdata_6, pwdata_7, pwdata_8, pwdata_9;
+    wire [31:0] prdata_0, prdata_1, prdata_2, prdata_3, prdata_4, prdata_5, prdata_6, prdata_7, prdata_8, prdata_9;
+    wire psel_0, psel_1, psel_2, psel_3, psel_4, psel_5, psel_6, psel_7, psel_8, psel_9;
+    wire penable_0, penable_1, penable_2, penable_3, penable_4, penable_5, penable_6, penable_7, penable_8, penable_9;
+    wire pwrite_0, pwrite_1, pwrite_2, pwrite_3, pwrite_4, pwrite_5, pwrite_6, pwrite_7, pwrite_8, pwrite_9;
+    wire pready_0, pready_1, pready_2, pready_3, pready_4, pready_5, pready_6, pready_7, pready_8, pready_9;
 
     apb_interconnect u_apb_interconnect (
         .clk(clk), .rst_n(rst_n),
@@ -598,7 +777,8 @@ module top_soc (
         .s4_paddr(paddr_4), .s4_psel(psel_4), .s4_penable(penable_4), .s4_pwrite(pwrite_4), .s4_pwdata(pwdata_4), .s4_pready(pready_4), .s4_prdata(prdata_4), .s4_pslverr(1'b0),
         .s5_paddr(paddr_5), .s5_psel(psel_5), .s5_penable(penable_5), .s5_pwrite(pwrite_5), .s5_pwdata(pwdata_5), .s5_pready(pready_5), .s5_prdata(prdata_5), .s5_pslverr(1'b0),
         .s6_paddr(paddr_6), .s6_psel(psel_6), .s6_penable(penable_6), .s6_pwrite(pwrite_6), .s6_pwdata(pwdata_6), .s6_pready(pready_6), .s6_prdata(prdata_6), .s6_pslverr(1'b0),
-        .s7_paddr(paddr_7), .s7_psel(psel_7), .s7_penable(penable_7), .s7_pwrite(pwrite_7), .s7_pwdata(pwdata_7), .s7_pready(pready_7), .s7_prdata(prdata_7), .s7_pslverr(1'b0)
+        .s7_paddr(paddr_7), .s7_psel(psel_7), .s7_penable(penable_7), .s7_pwrite(pwrite_7), .s7_pwdata(pwdata_7), .s7_pready(pready_7), .s7_prdata(prdata_7), .s7_pslverr(1'b0),
+        .s8_paddr(paddr_8), .s8_psel(psel_8), .s8_penable(penable_8), .s8_pwrite(pwrite_8), .s8_pwdata(pwdata_8), .s8_pready(pready_8), .s8_prdata(prdata_8), .s8_pslverr(1'b0)
     );
 
     // =========================================================================
@@ -664,6 +844,81 @@ module top_soc (
     apb_syscon u_apb_syscon (
         .clk(clk), .rst_n(rst_n),
         .paddr(paddr_7), .psel(psel_7), .penable(penable_7), .pwrite(pwrite_7), .pwdata(pwdata_7), .pready(pready_7), .prdata(prdata_7)
+    );
+
+    // S8: PLIC
+    apb_plic #(
+        .ALGORITHM("BINARY_TREE")
+    ) u_apb_plic (
+        .clk_i      (clk),
+        .rst_ni     (rst_n),
+        .paddr      (s8_paddr),
+        .psel       (s8_psel),
+        .penable    (s8_penable),
+        .pwrite     (s8_pwrite),
+        .pwdata     (s8_pwdata),
+        .pready     (s8_pready),
+        .prdata     (s8_prdata),
+        .pslverr    (s8_pslverr),
+        .irq_src_i  (plic_irq_src),
+        .irq_o      (cpu_meip)
+    );
+
+    // =========================================================================
+    // DMA CONTROLLER (AXI Master 3 / APB Slave 9)
+    // =========================================================================
+    axi_apb_dma u_axi_apb_dma (
+        .clk_bus        (clk),
+        .rst_bus_n      (reset_cpu_n),
+
+        // --- GIAO TIẾP APB (Cấu hình) ---
+        .s_apb_psel     (s9_psel),
+        .s_apb_penable  (s9_penable),
+        .s_apb_pwrite   (s9_pwrite),
+        .s_apb_paddr    (s9_paddr[12:0]),
+        .s_apb_pwdata   (s9_pwdata),
+        .s_apb_prdata   (s9_prdata),
+        .s_apb_pslverr  (s9_pslverr),
+        .s_apb_pready   (s9_pready),
+
+        // --- NGẮT & HARDWARE TRIGGER ---
+        .dma_irq        (dma_irq),
+        .periph_req     (periph_dma_req),
+        .periph_clr     (periph_dma_clr),
+
+        // --- GIAO TIẾP AXI MASTER (Đọc/Ghi bộ nhớ) ---
+        // Write Address
+        .AWADDR         (m3_awaddr),
+        .AWLEN          (m3_awlen),
+        .AWSIZE         (m3_awsize),
+        .AWID           (m3_awid),
+        .AWVALID        (m3_awvalid),
+        .AWREADY        (m3_awready),
+        // Write Data
+        .WDATA          (m3_wdata),
+        .WSTRB          (m3_wstrb),
+        .WLAST          (m3_wlast),
+        .WVALID         (m3_wvalid),
+        .WREADY         (m3_wready),
+        // Write Response
+        .BID            (m3_bid),
+        .BRESP          (m3_bresp),
+        .BVALID         (m3_bvalid),
+        .BREADY         (m3_bready),
+        // Read Address
+        .ARADDR         (m3_araddr),
+        .ARLEN          (m3_arlen),
+        .ARSIZE         (m3_arsize),
+        .ARID           (m3_arid),
+        .ARVALID        (m3_arvalid),
+        .ARREADY        (m3_arready),
+        // Read Data
+        .RDATA          (m3_rdata),
+        .RID            (m3_rid),
+        .RRESP          (m3_rresp),
+        .RLAST          (m3_rlast),
+        .RVALID         (m3_rvalid),
+        .RREADY         (m3_rready)
     );
 
 endmodule

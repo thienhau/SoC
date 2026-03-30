@@ -1,3 +1,6 @@
+`timescale 1ns / 1ps
+`include "dma_defines.vh"
+
 // ============================================================
 // dma_soc_wrap.v — Layer 3 project wrapper (ví dụ)
 // Dự án: SoC với 4 kênh DMA, AXI4 32-bit, APB config
@@ -7,9 +10,8 @@
 //   2. Map tên port theo convention của SoC
 //
 // ============================================================
-`include "dma_define.vh"
 
-module dma_soc_wrap (
+module axi_apb_dma (
     // SoC clock/reset (tên theo convention dự án)
     input  wire         clk_bus,
     input  wire         rst_bus_n,

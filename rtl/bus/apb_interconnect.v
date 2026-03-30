@@ -12,7 +12,9 @@ module apb_interconnect #(
     parameter SLV4_BASE = 32'h4000_4000, parameter SLV4_MASK = 32'hFFFF_F000, // S4: I2C
     parameter SLV5_BASE = 32'h4000_5000, parameter SLV5_MASK = 32'hFFFF_F000, // S5: Watchdog
     parameter SLV6_BASE = 32'h4000_6000, parameter SLV6_MASK = 32'hFFFF_F000, // S6: CORDIC
-    parameter SLV7_BASE = 32'h4000_7000, parameter SLV7_MASK = 32'hFFFF_F000  // S7: Syscon
+    parameter SLV7_BASE = 32'h4000_7000, parameter SLV7_MASK = 32'hFFFF_F000, // S7: Syscon
+    parameter SLV8_BASE = 32'h0C00_0000, parameter SLV8_MASK = 32'hFC00_0000, // S8: PLIC (0x0C00_0000)
+    parameter SLV9_BASE = 32'h4000_8000, parameter SLV9_MASK = 32'hFFFF_F000  // S9: DMA Configuration
 )(
     input  wire                     clk,
     input  wire                     rst_n,
@@ -67,7 +69,27 @@ module apb_interconnect #(
     // SLAVE 7: Syscon
     output wire [ADDR_WIDTH-1:0]    s7_paddr, output wire s7_psel, output wire s7_penable,
     output wire s7_pwrite, output wire [DATA_WIDTH-1:0] s7_pwdata, output wire [(DATA_WIDTH/8)-1:0] s7_pstrb,
-    output wire [2:0] s7_pprot, input wire s7_pready, input wire [DATA_WIDTH-1:0] s7_prdata, input wire s7_pslverr
+    output wire [2:0] s7_pprot, input wire s7_pready, input wire [DATA_WIDTH-1:0] s7_prdata, input wire s7_pslverr,
+
+    // S8: PLIC
+    output wire [ADDR_WIDTH-1:0] s8_paddr,
+    output wire                  s8_psel,
+    output wire                  s8_penable,
+    output wire                  s8_pwrite,
+    output wire [DATA_WIDTH-1:0] s8_pwdata,
+    input  wire [DATA_WIDTH-1:0] s8_prdata,
+    input  wire                  s8_pready,
+    input  wire                  s8_pslverr,
+
+    // S9: DMA Config
+    output wire [ADDR_WIDTH-1:0] s9_paddr,
+    output wire                  s9_psel,
+    output wire                  s9_penable,
+    output wire                  s9_pwrite,
+    output wire [DATA_WIDTH-1:0] s9_pwdata,
+    input  wire [DATA_WIDTH-1:0] s9_prdata,
+    input  wire                  s9_pready,
+    input  wire                  s9_pslverr
 );
 
     // ADDRESS DECODING
@@ -79,7 +101,9 @@ module apb_interconnect #(
     wire match_s5 = ((m_paddr & SLV5_MASK) == SLV5_BASE);
     wire match_s6 = ((m_paddr & SLV6_MASK) == SLV6_BASE);
     wire match_s7 = ((m_paddr & SLV7_MASK) == SLV7_BASE);
-    wire match_any = match_s0 | match_s1 | match_s2 | match_s3 | match_s4 | match_s5 | match_s6 | match_s7;
+    wire match_s8 = ((m_paddr & SLV8_MASK) == SLV8_BASE);
+    wire match_s9 = ((m_paddr & SLV9_MASK) == SLV9_BASE);
+    wire match_any = match_s0 | match_s1 | match_s2 | match_s3 | match_s4 | match_s5 | match_s6 | match_s7 | match_s8 | match_s9;
 
     // COMMON SIGNALS TO ALL SLAVES
     assign s0_paddr = m_paddr; assign s0_penable = m_penable; assign s0_pwrite = m_pwrite; assign s0_pwdata = m_pwdata; assign s0_pstrb = m_pstrb; assign s0_pprot = m_pprot;
@@ -90,6 +114,8 @@ module apb_interconnect #(
     assign s5_paddr = m_paddr; assign s5_penable = m_penable; assign s5_pwrite = m_pwrite; assign s5_pwdata = m_pwdata; assign s5_pstrb = m_pstrb; assign s5_pprot = m_pprot;
     assign s6_paddr = m_paddr; assign s6_penable = m_penable; assign s6_pwrite = m_pwrite; assign s6_pwdata = m_pwdata; assign s6_pstrb = m_pstrb; assign s6_pprot = m_pprot;
     assign s7_paddr = m_paddr; assign s7_penable = m_penable; assign s7_pwrite = m_pwrite; assign s7_pwdata = m_pwdata; assign s7_pstrb = m_pstrb; assign s7_pprot = m_pprot;
+    assign s8_paddr = m_paddr; assign s8_penable = m_penable; assign s8_pwrite = m_pwrite; assign s8_pwdata = m_pwdata; assign s8_pprot = m_pprot;
+    assign s9_paddr = m_paddr; assign s9_penable = m_penable; assign s9_pwrite = m_pwrite; assign s9_pwdata = m_pwdata; assign s9_pprot = m_pprot;
 
     // CHIP SELECT MUX
     assign s0_psel = m_psel & match_s0;
@@ -100,6 +126,8 @@ module apb_interconnect #(
     assign s5_psel = m_psel & match_s5;
     assign s6_psel = m_psel & match_s6;
     assign s7_psel = m_psel & match_s7;
+    assign s8_psel = m_psel & match_s8;
+    assign s9_psel = m_psel & match_s9;
 
     // DEFAULT SLAVE (Chống treo bus)
     reg def_slv_ready;
@@ -119,6 +147,8 @@ module apb_interconnect #(
         else if (match_s5) begin m_prdata = s5_prdata; m_pready = s5_pready; m_pslverr = s5_pslverr; end
         else if (match_s6) begin m_prdata = s6_prdata; m_pready = s6_pready; m_pslverr = s6_pslverr; end
         else if (match_s7) begin m_prdata = s7_prdata; m_pready = s7_pready; m_pslverr = s7_pslverr; end
+        else if (match_s8) begin m_prdata = s8_prdata; m_pready = s8_pready; m_pslverr = s8_pslverr; end
+        else if (match_s9) begin m_prdata = s9_prdata; m_pready = s9_pready; m_pslverr = s9_pslverr; end
         else begin m_prdata = 32'h0; m_pready = def_slv_ready; m_pslverr = 1'b1; end
     end
 endmodule

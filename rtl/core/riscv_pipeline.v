@@ -34,7 +34,6 @@ module riscv_pipeline (
     // Debug Module Interface
     input  wire        dbg_halt_req,
     input  wire        dbg_resume_req,
-    input  wire        dbg_step_req,
     output wire        dbg_halted,
     
     input  wire [15:0] dbg_reg_read_addr,
@@ -233,6 +232,12 @@ module riscv_pipeline (
     // =========================================================================
     // LOGIC TRAP & INTERRUPT
     // =========================================================================
+    // 1. Điều kiện thức dậy từ WFI (Chỉ cần Pending & Enable, bỏ qua Global MIE)
+    wire wake_interrupt = (meip_i & mie_val[11]) | 
+                          (msip_i & mie_val[3])  | 
+                          (mtip_i & mie_val[7]);
+
+    // 2. Điều kiện thực sự nhảy vào hàm ngắt (Phải có thêm Global MIE)
     wire is_external_irq = meip_i & mie_val[11] & mstatus_mie_val;
     wire is_software_irq = msip_i & mie_val[3]  & mstatus_mie_val;
     wire is_timer_irq    = mtip_i & mie_val[7]  & mstatus_mie_val;
@@ -833,7 +838,7 @@ module riscv_pipeline (
         .mf_alu_stall(mf_alu_stall),
 
         .wfi_req(wfi_req_internal),
-        .trap_interrupt(trap_interrupt),
+        .trap_interrupt(wake_interrupt),
         .is_sleeping(is_sleeping_internal),
         
         .dbg_halt_req(dbg_halt_req),

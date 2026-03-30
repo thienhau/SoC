@@ -23,7 +23,7 @@
 //   - wr_en khi full  → bị bỏ qua, không wrap
 //   - rd_en khi empty → rd_data giữ giá trị cũ
 //   - wr_en+rd_en cùng lúc → count không đổi, data forward
-module sync_fifo #(
+module sync_ff #(
     parameter DATA_W    = 32,
     parameter DEPTH     = 8,
     parameter AFULL_TH  = 2,

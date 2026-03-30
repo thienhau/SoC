@@ -1,3 +1,6 @@
+`timescale 1ns / 1ps
+`include "clint_defines.vh"
+
 // ============================================================
 //  clint_top.v  —  Top-level CLINT (AXI4 Full, Verilog-2001)
 //
@@ -25,10 +28,7 @@
 //    PIPELINE_IRQ   : 1 = thêm FF stage trên mtip/msip output
 // ============================================================
 
-`timescale 1ns/1ps
-`include "Clint_defines.vh"
-
-module clint_top #(
+module axi_clint #(
     parameter NUM_HARTS      = 1,
     parameter HART_IDX_W     = 1,    // = max(1, ceil(log2(NUM_HARTS)))
     parameter AXI_ADDR_WIDTH = 26,
