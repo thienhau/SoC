@@ -1,5 +1,23 @@
 `timescale 1ns / 1ps
 
+module reset_sync (
+    input  wire clk,
+    input  wire rst_in_n,
+    output wire rst_out_n
+);
+    reg r1, r2;
+    always @(posedge clk or negedge rst_in_n) begin
+        if (!rst_in_n) begin
+            r1 <= 1'b0;
+            r2 <= 1'b0;
+        end else begin
+            r1 <= 1'b1;
+            r2 <= r1;
+        end
+    end
+    assign rst_out_n = r2;
+endmodule
+
 // =========================================================================
 // 1. MODULE: cdc_sync_bit
 // Chức năng: Đồng bộ hóa 1 bit tín hiệu điều khiển (Control/Level)
