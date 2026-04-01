@@ -209,20 +209,27 @@ module cdc_async_fifo_wrapper #(
     output wire [DATA_WIDTH-1:0] rdata,
     output wire rempty
 );
-    // Tái sử dụng fifo_async.v hiện có của bạn
-    fifo_async #(
-        .DSIZE(DATA_WIDTH),
-        .ASIZE(DEPTH_LOG2)
+    // Tính toán Depth từ số bit địa chỉ
+    localparam FIFO_DEPTH_VAL = (1 << DEPTH_LOG2);
+
+    // Sử dụng module async_fifo phiên bản mới
+    async_fifo #(
+        .ASFIFO_TYPE(0),         // 0: Normal FIFO
+        .DATA_WIDTH(DATA_WIDTH),
+        .FIFO_DEPTH(FIFO_DEPTH_VAL)
     ) u_async_fifo (
-        .wclk  (wclk),
-        .wrst_n(wrst_n),
-        .winc  (wen),
-        .wdata (wdata),
-        .wfull (wfull),
-        .rclk  (rclk),
-        .rrst_n(rrst_n),
-        .rinc  (ren),
-        .rdata (rdata),
-        .rempty(rempty)
+        .clk_wr_domain (wclk),
+        .clk_rd_domain (rclk),
+        .data_i        (wdata),
+        .data_o        (rdata),
+        .wr_valid_i    (wen),
+        .rd_valid_i    (ren),
+        .empty_o       (rempty),
+        .full_o        (wfull),
+        .wr_ready_o    (), // Bỏ trống vì wrapper cũ dùng cờ wfull
+        .rd_ready_o    (),
+        .almost_empty_o(),
+        .almost_full_o (),
+        .rst_n         (wrst_n) // Dùng reset của miền write làm reset chung
     );
 endmodule

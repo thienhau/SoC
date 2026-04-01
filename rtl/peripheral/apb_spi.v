@@ -132,14 +132,22 @@ module apb_spi #(
     assign dma_rx_req = (!rx_empty) & reg_dma_int[3];
 
     // Async FIFOs
-    fifo_async #(.DSIZE(8), .ASIZE(4)) u_spi_tx_fifo (
-        .wclk(pclk), .wrst_n(presetn), .winc(tx_wr_apb), .wdata(pwdata[7:0]), .wfull(tx_full),
-        .rclk(spi_clk), .rrst_n(spi_rst_n), .rinc(tx_rd_core), .rdata(tx_data_core), .rempty(tx_empty)
+    async_fifo #(.DATA_WIDTH(8), .FIFO_DEPTH(16)) u_spi_tx_fifo (
+        .clk_wr_domain(pclk),       .clk_rd_domain(spi_clk),
+        .data_i(pwdata[7:0]),       .data_o(tx_data_core),
+        .wr_valid_i(tx_wr_apb),     .rd_valid_i(tx_rd_core),
+        .full_o(tx_full),           .empty_o(tx_empty),
+        .rst_n(presetn),
+        .wr_ready_o(), .rd_ready_o(), .almost_empty_o(), .almost_full_o()
     );
 
-    fifo_async #(.DSIZE(8), .ASIZE(4)) u_spi_rx_fifo (
-        .wclk(spi_clk), .wrst_n(spi_rst_n), .winc(rx_wr_core), .wdata(spi_rx_shift), .wfull(rx_full),
-        .rclk(pclk), .rrst_n(presetn), .rinc(rx_rd_apb), .rdata(rx_data_apb), .rempty(rx_empty)
+    async_fifo #(.DATA_WIDTH(8), .FIFO_DEPTH(16)) u_spi_rx_fifo (
+        .clk_wr_domain(spi_clk),    .clk_rd_domain(pclk),
+        .data_i(spi_rx_shift),      .data_o(rx_data_apb),
+        .wr_valid_i(rx_wr_core),    .rd_valid_i(rx_rd_apb),
+        .full_o(rx_full),           .empty_o(rx_empty),
+        .rst_n(presetn),
+        .wr_ready_o(), .rd_ready_o(), .almost_empty_o(), .almost_full_o()
     );
 
     // ============================================================

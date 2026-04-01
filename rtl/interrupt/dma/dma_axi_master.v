@@ -74,6 +74,7 @@ module axi4_master_rd #(
     output reg  [ADDR_W-1:0] ARADDR,
     output reg  [LEN_W-1:0]  ARLEN,
     output reg  [2:0]        ARSIZE,
+    output wire [1:0]        ARBURST,
     output reg  [ID_W-1:0]   ARID,
     output reg               ARVALID,
     input  wire              ARREADY,
@@ -86,6 +87,7 @@ module axi4_master_rd #(
     input  wire                   RVALID,
     output wire                   RREADY
 );
+    assign ARBURST = 2'b01;
 
     // localparam
     // function phải khai báo TRƯỚC localparam dùng nó (Verilog-2001)
@@ -268,6 +270,7 @@ module axi4_master_wr #(
     output reg  [ADDR_W-1:0] AWADDR,
     output reg  [LEN_W-1:0]  AWLEN,
     output reg  [2:0]        AWSIZE,
+    output wire [1:0]        AWBURST,
     output reg  [ID_W-1:0]   AWID,
     output reg               AWVALID,
     input  wire              AWREADY,
@@ -285,6 +288,7 @@ module axi4_master_wr #(
     input  wire              BVALID,
     output wire              BREADY
 );
+    assign AWBURST = 2'b01;
 
     // localparam
     function integer clog2_fn;

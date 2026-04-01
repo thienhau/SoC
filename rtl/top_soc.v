@@ -38,9 +38,8 @@ module top_soc (
     inout  wire        i2c_sda,
 
     output wire        flash_sck,
-    output wire        flash_cs,
-    output wire        flash_mosi,
-    input  wire        flash_miso,
+    output wire        flash_cs_n,
+    inout  wire [3:0]  flash_io,
 
     output wire        sdram_clk,
     output wire        sdram_cke,
@@ -388,7 +387,7 @@ module top_soc (
 
     // --- M0. ICACHE ---
     wire ic_uncache_en = (cpu_inst_addr >= 32'h4000_0000 && cpu_inst_addr <= 32'h4FFF_FFFF);
-    icache u_icache (
+    instruction_cache u_icache (
         .clk             (clk_cpu),              // clk_cpu (400MHz)
         .rst_n           (reset_core_n_sync),
         .cpu_read_req    (cpu_inst_req),
@@ -436,7 +435,7 @@ module top_soc (
 
     // --- M1. DCACHE ---
     wire dc_uncache_en = (cpu_data_addr >= 32'h4000_0000 && cpu_data_addr <= 32'h4FFF_FFFF);
-    dcache u_dcache (
+    data_cache u_dcache (
         .clk             (clk_cpu),              // clk_cpu (400MHz)
         .rst_n           (reset_core_n_sync),
         .cpu_read_req    (cpu_data_rd_req),
@@ -556,13 +555,48 @@ module top_soc (
         .s_axi_rid(s1_rid), .s_axi_rdata(s1_rdata), .s_axi_rresp(s1_rresp), .s_axi_rlast(s1_rlast), .s_axi_rvalid(s1_rvalid), .s_axi_rready(s1_rready)
     );
 
+    wire flash_io0_o, flash_io0_oe, flash_io0_i;
+    wire flash_io1_o, flash_io1_oe, flash_io1_i;
+    wire flash_io2_o, flash_io2_oe, flash_io2_i;
+    wire flash_io3_o, flash_io3_oe, flash_io3_i;
+
+    // Chiều OUT: Nếu Output Enable (OE) = 1 thì đẩy dữ liệu ra, nếu bằng 0 thì nhả ra (High-Z)
+    assign flash_io[0] = flash_io0_oe ? flash_io0_o : 1'bz;
+    assign flash_io[1] = flash_io1_oe ? flash_io1_o : 1'bz;
+    assign flash_io[2] = flash_io2_oe ? flash_io2_o : 1'bz;
+    assign flash_io[3] = flash_io3_oe ? flash_io3_o : 1'bz;
+
+    // Chiều IN: Luôn luôn đọc dữ liệu từ chân vật lý vào trong ruột chip
+    assign flash_io0_i = flash_io[0];
+    assign flash_io1_i = flash_io[1];
+    assign flash_io2_i = flash_io[2];
+    assign flash_io3_i = flash_io[3];
+
     axi_spi_flash u_axi_flash (
         .clk(clk_axi), .rst_n(reset_axi_n_sync),
-        .flash_sck(flash_sck), .flash_cs(flash_cs), .flash_mosi(flash_mosi), .flash_miso(flash_miso),
-        .s_axi_arid(s2_arid), .s_axi_araddr(s2_araddr), .s_axi_arlen(s2_arlen), .s_axi_arsize(s2_arsize), .s_axi_arburst(s2_arburst), .s_axi_arvalid(s2_arvalid), .s_axi_arready(s2_arready),
-        .s_axi_rid(s2_rid), .s_axi_rdata(s2_rdata), .s_axi_rresp(s2_rresp), .s_axi_rlast(s2_rlast), .s_axi_rvalid(s2_rvalid), .s_axi_rready(s2_rready)
+        
+        // Giao diện Quad SPI vật lý
+        .spi_clk_o  (flash_sck), 
+        .spi_cs_n_o (flash_cs_n), 
+        .spi_io0_o  (flash_io0_o), .spi_io0_i  (flash_io0_i), .spi_io0_oe (flash_io0_oe),
+        .spi_io1_o  (flash_io1_o), .spi_io1_i  (flash_io1_i), .spi_io1_oe (flash_io1_oe),
+        .spi_io2_o  (flash_io2_o), .spi_io2_i  (flash_io2_i), .spi_io2_oe (flash_io2_oe),
+        .spi_io3_o  (flash_io3_o), .spi_io3_i  (flash_io3_i), .spi_io3_oe (flash_io3_oe),
+
+        // Các kênh AXI giữ nguyên
+        .s_axi_arid   (s2_arid),    .s_axi_araddr (s2_araddr), 
+        .s_axi_arlen  (s2_arlen),   .s_axi_arsize (s2_arsize), 
+        .s_axi_arburst(s2_arburst), .s_axi_arvalid(s2_arvalid), 
+        .s_axi_arready(s2_arready),
+        .s_axi_rid    (s2_rid),     .s_axi_rdata  (s2_rdata), 
+        .s_axi_rresp  (s2_rresp),   .s_axi_rlast  (s2_rlast), 
+        .s_axi_rvalid (s2_rvalid),  .s_axi_rready (s2_rready),
+        
+        // Cắm cứng kênh Ghi bằng 0 vì module bạn chặn kênh Ghi rồi (Hoặc nối vào s2_*)
+        .s_axi_awid(s2_awid), .s_axi_awaddr(s2_awaddr), .s_axi_awlen(s2_awlen), .s_axi_awsize(s2_awsize), .s_axi_awburst(s2_awburst), .s_axi_awvalid(s2_awvalid), .s_axi_awready(s2_awready),
+        .s_axi_wdata(s2_wdata), .s_axi_wstrb(s2_wstrb), .s_axi_wlast(s2_wlast), .s_axi_wvalid(s2_wvalid), .s_axi_wready(s2_wready),
+        .s_axi_bid(s2_bid), .s_axi_bresp(s2_bresp), .s_axi_bvalid(s2_bvalid), .s_axi_bready(s2_bready)
     );
-    assign s2_awready = 0; assign s2_wready = 0; assign s2_bvalid = 0;
 
     wire [15:0] sdram_dq_i, sdram_dq_o; wire sdram_dq_oe;
     assign sdram_dq   = sdram_dq_oe ? sdram_dq_o : 16'bz;
@@ -602,18 +636,63 @@ module top_soc (
         .m_apb_pready(apb_pready), .m_apb_prdata(apb_prdata), .m_apb_pslverr(apb_pslverr)
     );
 
-    // S5: CLINT (Dùng nguyên vẹn mã gốc của anh)
-    clint u_clint (
-        .clk             (clk_axi),
-        .rst_n           (reset_axi_n_sync),
-        .rtc_clk         (rtc_clk),
-        .awid(s5_awid), .awaddr(s5_awaddr), .awlen(s5_awlen), .awsize(s5_awsize), .awburst(s5_awburst), .awvalid(s5_awvalid), .awready(s5_awready),
-        .wdata(s5_wdata), .wstrb(s5_wstrb), .wlast(s5_wlast), .wvalid(s5_wvalid), .wready(s5_wready),
-        .bid(s5_bid), .bresp(s5_bresp), .bvalid(s5_bvalid), .bready(s5_bready),
-        .arid(s5_arid), .araddr(s5_araddr), .arlen(s5_arlen), .arsize(s5_arsize), .arburst(s5_arburst), .arvalid(s5_arvalid), .arready(s5_arready),
-        .rid(s5_rid), .rdata(s5_rdata), .rresp(s5_rresp), .rlast(s5_rlast), .rvalid(s5_rvalid), .rready(s5_rready),
-        .msip            (cpu_msip_raw),
-        .mtip            (cpu_mtip_raw)
+    // S5: CLINT
+    axi_clint #(
+        .NUM_HARTS      (1),
+        .HART_IDX_W     (1),
+        .AXI_ADDR_WIDTH (32),
+        .AXI_ID_WIDTH   (7),     // AXI Interconnect sử dụng 7-bit ID cho Slave
+        .PIPELINE_IRQ   (1)
+    ) u_clint (
+        // Clocks & Reset
+        .clk_i          (clk_axi),
+        .rst_ni         (reset_axi_n_sync),
+        .rtc_clk_i      (rtc_clk),
+        
+        // AXI Write Address Channel
+        .s_axi_awid     (s5_awid), 
+        .s_axi_awaddr   (s5_awaddr), 
+        .s_axi_awlen    (s5_awlen), 
+        .s_axi_awsize   (s5_awsize), 
+        .s_axi_awburst  (s5_awburst), 
+        .s_axi_awprot   (s5_awprot), 
+        .s_axi_awvalid  (s5_awvalid), 
+        .s_axi_awready  (s5_awready),    
+        
+        // AXI Write Data Channel
+        .s_axi_wdata    (s5_wdata), 
+        .s_axi_wstrb    (s5_wstrb), 
+        .s_axi_wlast    (s5_wlast), 
+        .s_axi_wvalid   (s5_wvalid), 
+        .s_axi_wready   (s5_wready),
+        
+        // AXI Write Response Channel
+        .s_axi_bid      (s5_bid), 
+        .s_axi_bresp    (s5_bresp), 
+        .s_axi_bvalid   (s5_bvalid), 
+        .s_axi_bready   (s5_bready),
+        
+        // AXI Read Address Channel
+        .s_axi_arid     (s5_arid), 
+        .s_axi_araddr   (s5_araddr), 
+        .s_axi_arlen    (s5_arlen), 
+        .s_axi_arsize   (s5_arsize), 
+        .s_axi_arburst  (s5_arburst), 
+        .s_axi_arprot   (s5_arprot), 
+        .s_axi_arvalid  (s5_arvalid), 
+        .s_axi_arready  (s5_arready),     
+        
+        // AXI Read Data Channel
+        .s_axi_rid      (s5_rid), 
+        .s_axi_rdata    (s5_rdata), 
+        .s_axi_rresp    (s5_rresp), 
+        .s_axi_rlast    (s5_rlast), 
+        .s_axi_rvalid   (s5_rvalid), 
+        .s_axi_rready   (s5_rready),
+        
+        // Interrupt Outputs (Nối vào tín hiệu raw đã được tạo, sẽ qua Sync bọc lại sau)
+        .msip_o         (cpu_msip_raw),
+        .mtip_o         (cpu_mtip_raw)
     );
 
     // =========================================================================
@@ -626,26 +705,27 @@ module top_soc (
     wire penable_0, penable_1, penable_2, penable_3, penable_4, penable_5, penable_6, penable_7, penable_8, penable_9;
     wire pwrite_0, pwrite_1, pwrite_2, pwrite_3, pwrite_4, pwrite_5, pwrite_6, pwrite_7, pwrite_8, pwrite_9;
     wire pready_0, pready_1, pready_2, pready_3, pready_4, pready_5, pready_6, pready_7, pready_8, pready_9;
+    wire pslverr_0, pslverr_1, pslverr_2, pslverr_3, pslverr_4, pslverr_5, pslverr_6, pslverr_7, pslverr_8, pslverr_9;
 
     apb_interconnect u_apb_interconnect (
         .clk(clk_apb), .rst_n(reset_apb_n_sync),
         .m_paddr(apb_paddr), .m_psel(apb_psel), .m_penable(apb_penable), .m_pwrite(apb_pwrite), .m_pwdata(apb_pwdata), .m_pstrb(apb_pstrb), .m_pprot(apb_pprot), .m_pready(apb_pready), .m_prdata(apb_prdata), .m_pslverr(apb_pslverr),
-        .s0_paddr(paddr_0), .s0_psel(psel_0), .s0_penable(penable_0), .s0_pwrite(pwrite_0), .s0_pwdata(pwdata_0), .s0_pready(pready_0), .s0_prdata(prdata_0), .s0_pslverr(s0_pslverr),
-        .s1_paddr(paddr_1), .s1_psel(psel_1), .s1_penable(penable_1), .s1_pwrite(pwrite_1), .s1_pwdata(pwdata_1), .s1_pready(pready_1), .s1_prdata(prdata_1), .s1_pslverr(s1_pslverr),
-        .s2_paddr(paddr_2), .s2_psel(psel_2), .s2_penable(penable_2), .s2_pwrite(pwrite_2), .s2_pwdata(pwdata_2), .s2_pready(pready_2), .s2_prdata(prdata_2), .s2_pslverr(s2_pslverr),
-        .s3_paddr(paddr_3), .s3_psel(psel_3), .s3_penable(penable_3), .s3_pwrite(pwrite_3), .s3_pwdata(pwdata_3), .s3_pready(pready_3), .s3_prdata(prdata_3), .s3_pslverr(s3_pslverr),
-        .s4_paddr(paddr_4), .s4_psel(psel_4), .s4_penable(penable_4), .s4_pwrite(pwrite_4), .s4_pwdata(pwdata_4), .s4_pready(pready_4), .s4_prdata(prdata_4), .s4_pslverr(s4_pslverr),
-        .s5_paddr(paddr_5), .s5_psel(psel_5), .s5_penable(penable_5), .s5_pwrite(pwrite_5), .s5_pwdata(pwdata_5), .s5_pready(pready_5), .s5_prdata(prdata_5), .s5_pslverr(s5_pslverr),
-        .s6_paddr(paddr_6), .s6_psel(psel_6), .s6_penable(penable_6), .s6_pwrite(pwrite_6), .s6_pwdata(pwdata_6), .s6_pready(pready_6), .s6_prdata(prdata_6), .s6_pslverr(s6_pslverr),
-        .s7_paddr(paddr_7), .s7_psel(psel_7), .s7_penable(penable_7), .s7_pwrite(pwrite_7), .s7_pwdata(pwdata_7), .s7_pready(pready_7), .s7_prdata(prdata_7), .s7_pslverr(s7_pslverr),
-        .s8_paddr(paddr_8), .s8_psel(psel_8), .s8_penable(penable_8), .s8_pwrite(pwrite_8), .s8_pwdata(pwdata_8), .s8_pready(pready_8), .s8_prdata(prdata_8), .s8_pslverr(s8_pslverr),
-        .s9_paddr(paddr_9), .s9_psel(psel_9), .s9_penable(penable_9), .s9_pwrite(pwrite_9), .s9_pwdata(pwdata_9), .s9_pready(pready_9), .s9_prdata(prdata_9), .s9_pslverr(s9_pslverr)
+        .s0_paddr(paddr_0), .s0_psel(psel_0), .s0_penable(penable_0), .s0_pwrite(pwrite_0), .s0_pwdata(pwdata_0), .s0_pready(pready_0), .s0_prdata(prdata_0), .s0_pslverr(pslverr_0),
+        .s1_paddr(paddr_1), .s1_psel(psel_1), .s1_penable(penable_1), .s1_pwrite(pwrite_1), .s1_pwdata(pwdata_1), .s1_pready(pready_1), .s1_prdata(prdata_1), .s1_pslverr(pslverr_1),
+        .s2_paddr(paddr_2), .s2_psel(psel_2), .s2_penable(penable_2), .s2_pwrite(pwrite_2), .s2_pwdata(pwdata_2), .s2_pready(pready_2), .s2_prdata(prdata_2), .s2_pslverr(pslverr_2),
+        .s3_paddr(paddr_3), .s3_psel(psel_3), .s3_penable(penable_3), .s3_pwrite(pwrite_3), .s3_pwdata(pwdata_3), .s3_pready(pready_3), .s3_prdata(prdata_3), .s3_pslverr(pslverr_3),
+        .s4_paddr(paddr_4), .s4_psel(psel_4), .s4_penable(penable_4), .s4_pwrite(pwrite_4), .s4_pwdata(pwdata_4), .s4_pready(pready_4), .s4_prdata(prdata_4), .s4_pslverr(pslverr_4),
+        .s5_paddr(paddr_5), .s5_psel(psel_5), .s5_penable(penable_5), .s5_pwrite(pwrite_5), .s5_pwdata(pwdata_5), .s5_pready(pready_5), .s5_prdata(prdata_5), .s5_pslverr(pslverr_5),
+        .s6_paddr(paddr_6), .s6_psel(psel_6), .s6_penable(penable_6), .s6_pwrite(pwrite_6), .s6_pwdata(pwdata_6), .s6_pready(pready_6), .s6_prdata(prdata_6), .s6_pslverr(pslverr_6),
+        .s7_paddr(paddr_7), .s7_psel(psel_7), .s7_penable(penable_7), .s7_pwrite(pwrite_7), .s7_pwdata(pwdata_7), .s7_pready(pready_7), .s7_prdata(prdata_7), .s7_pslverr(pslverr_7),
+        .s8_paddr(paddr_8), .s8_psel(psel_8), .s8_penable(penable_8), .s8_pwrite(pwrite_8), .s8_pwdata(pwdata_8), .s8_pready(pready_8), .s8_prdata(prdata_8), .s8_pslverr(pslverr_8),
+        .s9_paddr(paddr_9), .s9_psel(psel_9), .s9_penable(penable_9), .s9_pwrite(pwrite_9), .s9_pwdata(pwdata_9), .s9_pready(pready_9), .s9_prdata(prdata_9), .s9_pslverr(pslverr_9)
     );
 
     // S0: UART
     apb_uart u_apb_uart (
         .pclk(clk_apb), .presetn(reset_apb_n_sync),
-        .psel(psel_0), .penable(penable_0), .pwrite(pwrite_0), .paddr(paddr_0[11:0]), .pwdata(pwdata_0), .prdata(prdata_0), .pready(pready_0), .pslverr(s0_pslverr),
+        .psel(psel_0), .penable(penable_0), .pwrite(pwrite_0), .paddr(paddr_0[11:0]), .pwdata(pwdata_0), .prdata(prdata_0), .pready(pready_0), .pslverr(pslverr_0),
         .uart_clk(clk_uart_gated), .uart_rst_n(reset_apb_n_sync), // Clock qua Gating
         .rxd(uart_rx), .txd(uart_tx),
         .uart_irq(uart_irq_raw), .dma_tx_req(uart_dma_tx_raw), .dma_rx_req(uart_dma_rx_raw)
@@ -654,7 +734,7 @@ module top_soc (
     // S1: GPIO (Dùng nguyên bản gốc)
     apb_gpio u_apb_gpio (
         .pclk(clk_gpio), .presetn(reset_apb_n_sync), // Clock qua Gating
-        .psel(psel_1), .penable(penable_1), .pwrite(pwrite_1), .paddr(paddr_1[11:0]), .pwdata(pwdata_1), .prdata(prdata_1), .pready(pready_1), .pslverr(s1_pslverr),
+        .psel(psel_1), .penable(penable_1), .pwrite(pwrite_1), .paddr(paddr_1[11:0]), .pwdata(pwdata_1), .prdata(prdata_1), .pready(pready_1), .pslverr(pslverr_1),
         .gpio_in(gpio_in), .gpio_out(gpio_out), .gpio_dir(gpio_oe), 
         .gpio_irq(gpio_irq_raw)
     );
@@ -662,14 +742,14 @@ module top_soc (
     // S2: PWM
     apb_pwm u_apb_pwm (
         .pclk(clk_pwm), .presetn(reset_apb_n_sync), // Clock qua Gating
-        .psel(psel_2), .penable(penable_2), .pwrite(pwrite_2), .paddr(paddr_2[11:0]), .pwdata(pwdata_2), .pstrb(apb_pstrb), .prdata(prdata_2), .pready(pready_2), .pslverr(s2_pslverr),
+        .psel(psel_2), .penable(penable_2), .pwrite(pwrite_2), .paddr(paddr_2[11:0]), .pwdata(pwdata_2), .pstrb(apb_pstrb), .prdata(prdata_2), .pready(pready_2), .pslverr(pslverr_2),
         .pwm_out(pwm_out)
     );
 
     // S3: SPI
     apb_spi u_apb_spi (
         .pclk(clk_apb), .presetn(reset_apb_n_sync),
-        .psel(psel_3), .penable(penable_3), .pwrite(pwrite_3), .paddr(paddr_3[11:0]), .pwdata(pwdata_3), .pstrb(apb_pstrb), .prdata(prdata_3), .pready(pready_3), .pslverr(s3_pslverr),
+        .psel(psel_3), .penable(penable_3), .pwrite(pwrite_3), .paddr(paddr_3[11:0]), .pwdata(pwdata_3), .pstrb(apb_pstrb), .prdata(prdata_3), .pready(pready_3), .pslverr(pslverr_3),
         .spi_clk(clk_spi_gated), .spi_rst_n(reset_apb_n_sync), // Clock qua Gating
         .sclk(spi_sck), .mosi(spi_mosi), .miso(spi_miso), .cs_n(spi_ss),
         .spi_irq(spi_irq_raw), .dma_tx_req(spi_dma_tx_raw), .dma_rx_req(spi_dma_rx_raw)
@@ -681,7 +761,7 @@ module top_soc (
     assign i2c_sda = i2c_sda_oe ? i2c_sda_o : 1'bz;
     apb_i2c u_apb_i2c (
         .pclk(clk_apb), .presetn(reset_apb_n_sync),
-        .psel(psel_4), .penable(penable_4), .pwrite(pwrite_4), .paddr(paddr_4[11:0]), .pwdata(pwdata_4), .pstrb(apb_pstrb), .prdata(prdata_4), .pready(pready_4), .pslverr(s4_pslverr),
+        .psel(psel_4), .penable(penable_4), .pwrite(pwrite_4), .paddr(paddr_4[11:0]), .pwdata(pwdata_4), .pstrb(apb_pstrb), .prdata(prdata_4), .pready(pready_4), .pslverr(pslverr_4),
         .i2c_clk(clk_i2c_gated), .i2c_rst_n(reset_apb_n_sync), // Clock qua Gating
         .scl_o(i2c_scl_o), .scl_oen(i2c_scl_oe), .scl_i(i2c_scl), .sda_o(i2c_sda_o), .sda_oen(i2c_sda_oe), .sda_i(i2c_sda),
         .i2c_irq(i2c_irq_raw), .dma_tx_req(i2c_dma_tx_raw), .dma_rx_req(i2c_dma_rx_raw)
@@ -690,7 +770,7 @@ module top_soc (
     // S5: Watchdog (Đã hỗ trợ rtc_clk)
     apb_watchdog u_apb_watchdog (
         .pclk(clk_apb), .presetn(reset_apb_n_sync),
-        .psel(psel_5), .penable(penable_5), .pwrite(pwrite_5), .paddr(paddr_5[11:0]), .pwdata(pwdata_5), .pstrb(apb_pstrb), .prdata(prdata_5), .pready(pready_5), .pslverr(s5_pslverr),
+        .psel(psel_5), .penable(penable_5), .pwrite(pwrite_5), .paddr(paddr_5[11:0]), .pwdata(pwdata_5), .pstrb(apb_pstrb), .prdata(prdata_5), .pready(pready_5), .pslverr(pslverr_5),
         .rtc_clk(rtc_clk), .rtc_rst_n(reset_apb_n_sync),
         .wdt_irq(wdt_irq_raw), .wdt_rst(wdt_rst)
     );
@@ -698,13 +778,13 @@ module top_soc (
     // S6: CORDIC
     apb_cordic u_apb_cordic (
         .pclk(clk_cordic), .presetn(reset_apb_n_sync), // Clock qua Gating
-        .psel(psel_6), .penable(penable_6), .pwrite(pwrite_6), .paddr(paddr_6[11:0]), .pwdata(pwdata_6), .prdata(prdata_6), .pready(pready_6), .pslverr(s6_pslverr)
+        .psel(psel_6), .penable(penable_6), .pwrite(pwrite_6), .paddr(paddr_6[11:0]), .pwdata(pwdata_6), .prdata(prdata_6), .pready(pready_6), .pslverr(pslverr_6)
     );
 
     // S7: Syscon
-    apb_syscon #(.DEFAULT_BOOT_ADDR(32'h0001_0000)) u_apb_syscon (
+    apb_syscon u_apb_syscon (
         .pclk(clk_apb), .presetn(rst_n), // Dùng Reset gốc
-        .psel(psel_7), .penable(penable_7), .pwrite(pwrite_7), .paddr(paddr_7[11:0]), .pwdata(pwdata_7), .prdata(prdata_7), .pready(pready_7), .pslverr(s7_pslverr),
+        .psel(psel_7), .penable(penable_7), .pwrite(pwrite_7), .paddr(paddr_7[11:0]), .pwdata(pwdata_7), .prdata(prdata_7), .pready(pready_7), .pslverr(pslverr_7),
         .o_reset_vector(syscon_reset_vector), .i_wfi_sleep(wfi_sleep_state), .i_ext_irq(cpu_meip_sync),
         .o_cpu_clk_en  (clk_en_cpu), 
         .o_dbg_clk_en  (clk_en_dbg),
@@ -719,7 +799,7 @@ module top_soc (
     // S8: PLIC
     apb_plic #(.ALGORITHM("BINARY_TREE")) u_apb_plic (
         .clk_i(clk_apb), .rst_ni(reset_apb_n_sync),
-        .paddr(paddr_8), .psel(psel_8), .penable(penable_8), .pwrite(pwrite_8), .pwdata(pwdata_8), .pready(pready_8), .prdata(prdata_8), .pslverr(s8_pslverr),
+        .paddr(paddr_8), .psel(psel_8), .penable(penable_8), .pwrite(pwrite_8), .pwdata(pwdata_8), .pready(pready_8), .prdata(prdata_8), .pslverr(pslverr_8),
         .irq_src_i(plic_irq_src), .irq_o(cpu_meip_raw)
     );
 
@@ -738,14 +818,14 @@ module top_soc (
     ) u_apb_cdc_dma (
         .s_clk          (clk_apb),            // Nguồn 100MHz
         .s_rst_n        (reset_apb_n_sync),
-        .s_apb_psel     (s9_psel), 
-        .s_apb_penable  (s9_penable), 
-        .s_apb_pwrite   (s9_pwrite), 
-        .s_apb_paddr    (s9_paddr[12:0]), 
-        .s_apb_pwdata   (s9_pwdata), 
-        .s_apb_prdata   (s9_prdata), 
-        .s_apb_pslverr  (s9_pslverr), 
-        .s_apb_pready   (s9_pready),
+        .s_apb_psel     (psel_9), 
+        .s_apb_penable  (penable_9), 
+        .s_apb_pwrite   (pwrite_9), 
+        .s_apb_paddr    (paddr_9[12:0]), 
+        .s_apb_pwdata   (pwdata_9), 
+        .s_apb_prdata   (prdata_9), 
+        .s_apb_pslverr  (pslverr_9), 
+        .s_apb_pready   (pready_9),
 
         .m_clk          (clk_axi),            // Đích 200MHz
         .m_rst_n        (reset_axi_n_sync),
@@ -760,7 +840,7 @@ module top_soc (
     );
 
     // Module DMA giữ nguyên ruột, chạy hoàn toàn bằng clk_axi
-    dma u_dma (
+    axi_apb_dma u_axi_apb_dma (
         .clk_bus        (clk_axi),          // Toàn bộ logic DMA chạy 200MHz
         .rst_bus_n      (reset_axi_n_sync),
         
@@ -776,15 +856,48 @@ module top_soc (
 
         // Ngắt và DMA Request từ ngoại vi (đã được đồng bộ clk_axi ở các bước trước)
         .dma_irq        (dma_irq), 
-        .periph_req     (periph_dma_req), 
-        .periph_clr     (periph_dma_clr),
+        .periph_dma_req (periph_dma_req), 
+        .periph_dma_clr (periph_dma_clr),
 
         // M-AXI Interface
-        .AWID(m3_awid), .AWADDR(m3_awaddr), .AWLEN(m3_awlen), .AWSIZE(m3_awsize), .AWBURST(m3_awburst), .AWVALID(m3_awvalid), .AWREADY(m3_awready),
-        .WDATA(m3_wdata), .WSTRB(m3_wstrb), .WLAST(m3_wlast), .WVALID(m3_wvalid), .WREADY(m3_wready),
-        .BID(m3_bid), .BRESP(m3_bresp), .BVALID(m3_bvalid), .BREADY(m3_bready),
-        .ARID(m3_arid), .ARADDR(m3_araddr), .ARLEN(m3_arlen), .ARSIZE(m3_arsize), .ARBURST(m3_arburst), .ARVALID(m3_arvalid), .ARREADY(m3_arready),
-        .RID(m3_rid), .RDATA(m3_rdata), .RRESP(m3_rresp), .RLAST(m3_rlast), .RVALID(m3_rvalid), .RREADY(m3_rready)
+        // Write Address Channel
+        .m_axi_awid     (m3_awid),
+        .m_axi_awaddr   (m3_awaddr),
+        .m_axi_awlen    (m3_awlen),
+        .m_axi_awsize   (m3_awsize),
+        .m_axi_awburst  (m3_awburst),
+        .m_axi_awvalid  (m3_awvalid),
+        .m_axi_awready  (m3_awready),
+
+        // Write Data Channel
+        .m_axi_wdata    (m3_wdata),
+        .m_axi_wstrb    (m3_wstrb),
+        .m_axi_wlast    (m3_wlast),
+        .m_axi_wvalid   (m3_wvalid),
+        .m_axi_wready   (m3_wready),
+
+        // Write Response Channel
+        .m_axi_bid      (m3_bid),
+        .m_axi_bresp    (m3_bresp),
+        .m_axi_bvalid   (m3_bvalid),
+        .m_axi_bready   (m3_bready),
+
+        // Read Address Channel
+        .m_axi_arid     (m3_arid),
+        .m_axi_araddr   (m3_araddr),
+        .m_axi_arlen    (m3_arlen),
+        .m_axi_arsize   (m3_arsize),
+        .m_axi_arburst  (m3_arburst),
+        .m_axi_arvalid  (m3_arvalid),
+        .m_axi_arready  (m3_arready),
+
+        // Read Data Channel
+        .m_axi_rid      (m3_rid),
+        .m_axi_rdata    (m3_rdata),
+        .m_axi_rresp    (m3_rresp),
+        .m_axi_rlast    (m3_rlast),
+        .m_axi_rvalid   (m3_rvalid),
+        .m_axi_rready   (m3_rready)
     );
 
 endmodule

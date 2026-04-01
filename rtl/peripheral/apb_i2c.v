@@ -148,14 +148,22 @@ module apb_i2c #(
     assign i2c_irq    = (reg_stat[0] & reg_dma_int[0]) | (!rx_fifo_empty & reg_dma_int[1]);
 
     // Async FIFOs cho Dữ liệu
-    fifo_async #(.DSIZE(8), .ASIZE(4)) u_tx_fifo (
-        .wclk(pclk), .wrst_n(presetn), .winc(tx_fifo_wr), .wdata(pwdata[7:0]), .wfull(tx_fifo_full),
-        .rclk(i2c_clk), .rrst_n(i2c_rst_n), .rinc(tx_fifo_rd_core), .rdata(tx_fifo_rdata_core), .rempty(tx_fifo_empty)
+    async_fifo #(.DATA_WIDTH(8), .FIFO_DEPTH(16)) u_tx_fifo (
+        .clk_wr_domain(pclk),       .clk_rd_domain(i2c_clk),
+        .data_i(pwdata[7:0]),       .data_o(tx_fifo_rdata_core),
+        .wr_valid_i(tx_fifo_wr),    .rd_valid_i(tx_fifo_rd_core),
+        .full_o(tx_fifo_full),      .empty_o(tx_fifo_empty),
+        .rst_n(presetn),
+        .wr_ready_o(), .rd_ready_o(), .almost_empty_o(), .almost_full_o()
     );
 
-    fifo_async #(.DSIZE(8), .ASIZE(4)) u_rx_fifo (
-        .wclk(i2c_clk), .wrst_n(i2c_rst_n), .winc(rx_fifo_wr_core), .wdata(core_rx_data), .wfull(rx_fifo_full),
-        .rclk(pclk), .rrst_n(presetn), .rinc(rx_fifo_rd), .rdata(rx_fifo_rdata), .rempty(rx_fifo_empty)
+    async_fifo #(.DATA_WIDTH(8), .FIFO_DEPTH(16)) u_rx_fifo (
+        .clk_wr_domain(i2c_clk),    .clk_rd_domain(pclk),
+        .data_i(core_rx_data),      .data_o(rx_fifo_rdata),
+        .wr_valid_i(rx_fifo_wr_core),.rd_valid_i(rx_fifo_rd),
+        .full_o(rx_fifo_full),      .empty_o(rx_fifo_empty),
+        .rst_n(presetn),
+        .wr_ready_o(), .rd_ready_o(), .almost_empty_o(), .almost_full_o()
     );
 
     // ============================================================

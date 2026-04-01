@@ -270,7 +270,7 @@ module riscv_pipeline (
     // PROGRAM COUNTER & FLUSH LOGIC
     // =========================================================================
     reg [31:0] pc_reg;
-    always @(posedge clk or negedge reset_n) begin
+    always @(posedge clk) begin
         if (!reset_n) begin
             pc_reg <= reset_vector_in;
         end else if (riscv_start && !riscv_done) begin
@@ -290,7 +290,7 @@ module riscv_pipeline (
     
     assign pc_in = pc_reg;
     reg flush_temp;
-    always @(posedge clk or negedge reset_n) begin
+    always @(posedge clk) begin
         if (!reset_n) begin
             flush_temp <= 1'b0;
         end else if (riscv_start && !riscv_done) begin
@@ -880,7 +880,7 @@ module riscv_pipeline (
     // =========================================================================
     // DONE LOGIC
     // =========================================================================
-    always @(posedge clk or negedge reset_n) begin
+    always @(posedge clk) begin
         if (!reset_n) begin
             riscv_done <= 1'b0;
         end else if (riscv_start) begin
