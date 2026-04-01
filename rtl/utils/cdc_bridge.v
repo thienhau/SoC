@@ -1,134 +1,210 @@
 `timescale 1ns / 1ps
 
-module native_cdc_bridge (
-    // --- CPU Domain (Ví dụ: 400MHz) ---
-    input  wire        cpu_clk,
-    input  wire        cpu_rst_n,
-    input  wire        cpu_req_val,
-    input  wire        cpu_req_is_write,
-    input  wire [31:0] cpu_req_addr,
-    input  wire [31:0] cpu_req_wdata,
-    input  wire [3:0]  cpu_req_wstrb,   // THÊM: Byte Strobe cho lệnh ghi
-    input  wire [1:0]  cpu_req_size,
-    output wire        cpu_req_ready,
-    output wire        cpu_resp_val,
-    output wire [31:0] cpu_resp_rdata,
-
-    // --- Bus Domain (Ví dụ: 300MHz) ---
-    input  wire        bus_clk,
-    input  wire        bus_rst_n,
-    output wire        bus_req_val,
-    output wire        bus_req_is_write,
-    output wire [31:0] bus_req_addr,
-    output wire [31:0] bus_req_wdata,
-    output wire [3:0]  bus_req_wstrb,   // THÊM: Byte Strobe
-    output wire [1:0]  bus_req_size,
-    input  wire        bus_req_ready,
-    input  wire        bus_resp_val,
-    input  wire [31:0] bus_resp_rdata
+// =========================================================================
+// 1. MODULE: cdc_sync_bit
+// Chức năng: Đồng bộ hóa 1 bit tín hiệu điều khiển (Control/Level)
+// Vị trí dùng: periph_req từ UART/SPI sang DMA, ngắt từ ngoại vi sang PLIC.
+// =========================================================================
+module cdc_sync_bit #(
+    parameter STAGES = 2 // Khuyên dùng 3 cho các miền clock tốc độ rất cao (>300MHz)
+)(
+    input  wire clk_dst,
+    input  wire rst_dst_n,
+    input  wire d_in,
+    output wire q_out
 );
-    // Kênh Request (CPU -> Bus)
-    // Độ rộng = is_write(1) + addr(32) + wdata(32) + wstrb(4) + size(2) = 71 bits
-    wire [70:0] req_wdata = {cpu_req_is_write, cpu_req_addr, cpu_req_wdata, cpu_req_wstrb, cpu_req_size};
-    wire [70:0] req_rdata;
-    wire req_full, req_empty;
+    reg [STAGES-1:0] sync_reg;
     
-    async_fifo #(.DATA_WIDTH(71), .ADDR_WIDTH(4)) REQ_FIFO (
-        .wclk(cpu_clk), .wrst_n(cpu_rst_n), 
-        .winc(cpu_req_val && cpu_req_ready), 
-        .wdata(req_wdata), 
-        .wfull(req_full),
-        .rclk(bus_clk), .rrst_n(bus_rst_n), 
-        .rinc(bus_req_ready && !req_empty), 
-        .rdata(req_rdata), 
-        .rempty(req_empty)
-    );
-
-    assign cpu_req_ready = !req_full;
-    assign bus_req_val   = !req_empty;
-    assign {bus_req_is_write, bus_req_addr, bus_req_wdata, bus_req_wstrb, bus_req_size} = req_rdata;
-
-    // Kênh Response (Bus -> CPU)
-    wire resp_full, resp_empty;
-    async_fifo #(.DATA_WIDTH(32), .ADDR_WIDTH(4)) RESP_FIFO (
-        .wclk(bus_clk), .wrst_n(bus_rst_n), 
-        .winc(bus_resp_val && !resp_full), 
-        .wdata(bus_resp_rdata), 
-        .wfull(resp_full),
-        .rclk(cpu_clk), .rrst_n(cpu_rst_n), 
-        .rinc(!resp_empty), // Tự động pop khi có dữ liệu
-        .rdata(cpu_resp_rdata), 
-        .rempty(resp_empty)
-    );
-
-    // cpu_resp_val cần được đồng bộ hóa chính xác để Cache nhận biết dữ liệu mới
-    assign cpu_resp_val = !resp_empty;
-
+    always @(posedge clk_dst or negedge rst_dst_n) begin
+        if (!rst_dst_n) begin
+            sync_reg <= {STAGES{1'b0}};
+        end else begin
+            sync_reg <= {sync_reg[STAGES-2:0], d_in}; // Dịch trái
+        end
+    end
+    
+    assign q_out = sync_reg[STAGES-1];
 endmodule
 
-module axi4_read_cdc #(
-    parameter ADDR_WIDTH = 32,
+// =========================================================================
+// 2. MODULE: cdc_sync_vector
+// Chức năng: Đồng bộ hóa 1 mảng bit độc lập (Không dùng cho bus dữ liệu)
+// Vị trí dùng: Đồng bộ các tín hiệu trạng thái (status flags) rời rạc.
+// =========================================================================
+module cdc_sync_vector #(
+    parameter WIDTH  = 8,
+    parameter STAGES = 2
+)(
+    input  wire              clk_dst,
+    input  wire              rst_dst_n,
+    input  wire [WIDTH-1:0]  d_in,
+    output wire [WIDTH-1:0]  q_out
+);
+    genvar i;
+    generate
+        for (i = 0; i < WIDTH; i = i + 1) begin : gen_sync
+            cdc_sync_bit #(.STAGES(STAGES)) u_bit (
+                .clk_dst   (clk_dst),
+                .rst_dst_n (rst_dst_n),
+                .d_in      (d_in[i]),
+                .q_out     (q_out[i])
+            );
+        end
+    endgenerate
+endmodule
+
+// =========================================================================
+// 3. MODULE: cdc_pulse
+// Chức năng: Truyền 1 xung (Pulse) an toàn từ clock này sang clock khác
+// Cơ chế: Đổi Pulse thành Toggle -> Đồng bộ -> Bắt cạnh để tạo Pulse mới
+// Vị trí dùng: Các tín hiệu Clear, Start, Stop (ví dụ từ APB kích hoạt CORDIC)
+// =========================================================================
+module cdc_pulse (
+    input  wire clk_src,
+    input  wire rst_src_n,
+    input  wire pulse_src,  // Xung đầu vào (1 chu kỳ của clk_src)
+    
+    input  wire clk_dst,
+    input  wire rst_dst_n,
+    output wire pulse_dst   // Xung đầu ra (1 chu kỳ của clk_dst)
+);
+    // Miền Source: Chuyển Pulse thành Toggle
+    reg toggle_src;
+    always @(posedge clk_src or negedge rst_src_n) begin
+        if (!rst_src_n) toggle_src <= 1'b0;
+        else if (pulse_src) toggle_src <= ~toggle_src;
+    end
+
+    // Đưa Toggle qua Sync_FF ở miền Đích
+    wire toggle_dst_sync;
+    cdc_sync_bit #(.STAGES(2)) u_sync (
+        .clk_dst(clk_dst), .rst_dst_n(rst_dst_n),
+        .d_in(toggle_src), .q_out(toggle_dst_sync)
+    );
+
+    // Miền Đích: Bắt cạnh (Edge Detection) Toggle để tái tạo Pulse
+    reg toggle_dst_dly;
+    always @(posedge clk_dst or negedge rst_dst_n) begin
+        if (!rst_dst_n) toggle_dst_dly <= 1'b0;
+        else            toggle_dst_dly <= toggle_dst_sync;
+    end
+
+    assign pulse_dst = toggle_dst_sync ^ toggle_dst_dly; // Kích hoạt khi có sự thay đổi (XOR)
+endmodule
+
+// =========================================================================
+// 4. MODULE: cdc_handshake
+// Chức năng: Truyền 1 gói dữ liệu (Data/Cmd) giữa 2 miền clock chênh lệch lớn
+// Cơ chế: Yêu cầu (Req) -> Đồng bộ -> Đích nhận data -> Phản hồi (Ack)
+// Vị trí dùng: Giao tiếp JTAG DTM (TCK) với Debug Module (System Clock)
+// =========================================================================
+module cdc_handshake #(
     parameter DATA_WIDTH = 32
 )(
-    // --- Miền Core (Gắn với I-Cache) ---
-    input  wire clk_core,
-    input  wire rst_core_n,
-    input  wire [ADDR_WIDTH-1:0] s_axi_araddr,
-    input  wire [7:0]            s_axi_arlen,
-    input  wire [2:0]            s_axi_arsize,
-    input  wire [1:0]            s_axi_arburst,
-    input  wire                  s_axi_arvalid,
-    output wire                  s_axi_arready,
-
-    output wire [DATA_WIDTH-1:0] s_axi_rdata,
-    output wire [1:0]            s_axi_rresp,
-    output wire                  s_axi_rlast,
-    output wire                  s_axi_rvalid,
-    input  wire                  s_axi_rready,
-
-    // --- Miền Bus (Gắn với Interconnect) ---
-    input  wire clk_bus,
-    input  wire rst_bus_n,
-    output wire [ADDR_WIDTH-1:0] m_axi_araddr,
-    output wire [7:0]            m_axi_arlen,
-    output wire [2:0]            m_axi_arsize,
-    output wire [1:0]            m_axi_arburst,
-    output wire                  m_axi_arvalid,
-    input  wire                  m_axi_arready,
-
-    input  wire [DATA_WIDTH-1:0] m_axi_rdata,
-    input  wire [1:0]            m_axi_rresp,
-    input  wire                  m_axi_rlast,
-    input  wire                  m_axi_rvalid,
-    output wire                  m_axi_rready
-);
-
-    // Kênh AR (Address Read): Master -> Slave
-    wire ar_empty, ar_full;
-    wire [44:0] ar_wdata = {s_axi_araddr, s_axi_arlen, s_axi_arsize, s_axi_arburst};
-    wire [44:0] ar_rdata;
+    // Miền Gửi (Source)
+    input  wire                   clk_src,
+    input  wire                   rst_src_n,
+    input  wire [DATA_WIDTH-1:0]  data_src,
+    input  wire                   req_src,
+    output wire                   ack_src,   // Báo cho Source biết đã truyền xong
     
-    assign s_axi_arready = ~ar_full;
-    assign m_axi_arvalid = ~ar_empty;
-    assign {m_axi_araddr, m_axi_arlen, m_axi_arsize, m_axi_arburst} = ar_rdata;
+    // Miền Nhận (Destination)
+    input  wire                   clk_dst,
+    input  wire                   rst_dst_n,
+    output reg  [DATA_WIDTH-1:0]  data_dst,
+    output wire                   valid_dst, // Báo cho Dest biết có data mới
+    input  wire                   ack_dst    // Dest xác nhận đã lấy data
+);
+    // --- Latch Data ở miền Source ---
+    reg [DATA_WIDTH-1:0] data_hold;
+    reg req_src_reg;
+    
+    always @(posedge clk_src or negedge rst_src_n) begin
+        if (!rst_src_n) begin
+            req_src_reg <= 1'b0;
+            data_hold   <= {DATA_WIDTH{1'b0}};
+        end else begin
+            if (req_src && !req_src_reg && !ack_src) begin // Bắt đầu gửi
+                req_src_reg <= 1'b1;
+                data_hold   <= data_src;
+            end else if (ack_src) begin // Chờ phản hồi từ Dest để hạ Req
+                req_src_reg <= 1'b0;
+            end
+        end
+    end
 
-    async_fifo_cdc #(.DATA_WIDTH(45), .ADDR_WIDTH(4)) FIFO_AR (
-        .wclk(clk_core), .wrst_n(rst_core_n), .winc(s_axi_arvalid & ~ar_full), .wdata(ar_wdata), .wfull(ar_full),
-        .rclk(clk_bus),  .rrst_n(rst_bus_n),  .rinc(m_axi_arready & ~ar_empty), .rdata(ar_rdata), .rempty(ar_empty)
+    // --- Đưa Req sang miền Dest ---
+    wire req_dst_sync;
+    cdc_sync_bit #(.STAGES(2)) u_sync_req (
+        .clk_dst(clk_dst), .rst_dst_n(rst_dst_n),
+        .d_in(req_src_reg), .q_out(req_dst_sync)
     );
 
-    // Kênh R (Data Read): Slave -> Master
-    wire r_empty, r_full;
-    wire [34:0] r_wdata = {m_axi_rdata, m_axi_rresp, m_axi_rlast};
-    wire [34:0] r_rdata;
+    // --- Latch Data ở miền Dest & Báo Valid ---
+    reg req_dst_dly;
+    always @(posedge clk_dst or negedge rst_dst_n) begin
+        if (!rst_dst_n) begin
+            req_dst_dly <= 1'b0;
+            data_dst    <= {DATA_WIDTH{1'b0}};
+        end else begin
+            req_dst_dly <= req_dst_sync;
+            if (req_dst_sync && !req_dst_dly) begin // Cạnh lên của Req_sync
+                data_dst <= data_hold; // Lấy Data vì nó đã ổn định (Req đã Sync)
+            end
+        end
+    end
+    
+    // Valid chỉ duy trì trong lúc Dest chưa Ack
+    reg ack_dst_reg;
+    always @(posedge clk_dst or negedge rst_dst_n) begin
+        if (!rst_dst_n) ack_dst_reg <= 1'b0;
+        else if (req_dst_sync && ack_dst) ack_dst_reg <= 1'b1;
+        else if (!req_dst_sync)           ack_dst_reg <= 1'b0;
+    end
+    assign valid_dst = req_dst_sync && !ack_dst_reg;
 
-    assign m_axi_rready = ~r_full;
-    assign s_axi_rvalid = ~r_empty;
-    assign {s_axi_rdata, s_axi_rresp, s_axi_rlast} = r_rdata;
-
-    async_fifo_cdc #(.DATA_WIDTH(35), .ADDR_WIDTH(4)) FIFO_R (
-        .wclk(clk_bus),  .wrst_n(rst_bus_n),  .winc(m_axi_rvalid & ~r_full), .wdata(r_wdata), .wfull(r_full),
-        .rclk(clk_core), .rrst_n(rst_core_n), .rinc(s_axi_rready & ~r_empty), .rdata(r_rdata), .rempty(r_empty)
+    // --- Phản hồi Ack về miền Source ---
+    cdc_sync_bit #(.STAGES(2)) u_sync_ack (
+        .clk_dst(clk_src), .rst_dst_n(rst_src_n),
+        .d_in(ack_dst_reg), .q_out(ack_src)
     );
+endmodule
 
+// =========================================================================
+// 5. MODULE: cdc_async_fifo_wrapper (Tuỳ chọn)
+// Chức năng: Bọc lại fifo_async.v để tên module thống nhất trong cdc_bridge
+// Vị trí dùng: AXI-to-APB Bridge, UART Core to APB.
+// =========================================================================
+module cdc_async_fifo_wrapper #(
+    parameter DATA_WIDTH = 32,
+    parameter DEPTH_LOG2 = 4
+)(
+    input  wire wclk,
+    input  wire wrst_n,
+    input  wire wen,
+    input  wire [DATA_WIDTH-1:0] wdata,
+    output wire wfull,
+    
+    input  wire rclk,
+    input  wire rrst_n,
+    input  wire ren,
+    output wire [DATA_WIDTH-1:0] rdata,
+    output wire rempty
+);
+    // Tái sử dụng fifo_async.v hiện có của bạn
+    fifo_async #(
+        .DSIZE(DATA_WIDTH),
+        .ASIZE(DEPTH_LOG2)
+    ) u_async_fifo (
+        .wclk  (wclk),
+        .wrst_n(wrst_n),
+        .winc  (wen),
+        .wdata (wdata),
+        .wfull (wfull),
+        .rclk  (rclk),
+        .rrst_n(rrst_n),
+        .rinc  (ren),
+        .rdata (rdata),
+        .rempty(rempty)
+    );
 endmodule

@@ -5,11 +5,15 @@ module axi_to_apb_bridge #(
     parameter DATA_WIDTH = 32,
     parameter ID_WIDTH   = 5
 )(
-    input  wire                     clk,
+    // ==========================================
+    // CLOCK & RESET (Đã tách thành 2 miền)
+    // ==========================================
+    input  wire                     clk_axi,
+    input  wire                     clk_apb,
     input  wire                     rst_n,
 
     // ==========================================
-    // AXI4 FULL SLAVE INTERFACE
+    // AXI4 FULL SLAVE INTERFACE (Miền clk_axi)
     // ==========================================
     // Write Address Channel
     input  wire [ID_WIDTH-1:0]      s_axi_awid,
@@ -53,7 +57,7 @@ module axi_to_apb_bridge #(
     input  wire                     s_axi_rready,
 
     // ==========================================
-    // APB4 MASTER INTERFACE
+    // APB4 MASTER INTERFACE (Miền clk_apb)
     // ==========================================
     output reg  [ADDR_WIDTH-1:0]    m_apb_paddr,
     output reg  [2:0]               m_apb_pprot,
@@ -81,11 +85,6 @@ module axi_to_apb_bridge #(
     localparam R_ARB_REQ = 3'd1;
     localparam R_DATA    = 3'd2;
 
-    // APB Arbiter States
-    localparam APB_IDLE   = 2'd0;
-    localparam APB_SETUP  = 2'd1;
-    localparam APB_ACCESS = 2'd2;
-
     // Write Context Registers
     reg [2:0]            w_state;
     reg [ID_WIDTH-1:0]   w_id_reg;
@@ -109,16 +108,18 @@ module axi_to_apb_bridge #(
 
     // Arbiter Signals
     reg  req_w;
-    wire ack_w;
+    reg  ack_w; // Đổi thành reg vì do CDC Arbiter cấp
     reg  req_r;
-    wire ack_r;
-    reg  [1:0] apb_state;
-    reg  apb_grant_read; // 1: Đang phục vụ Read, 0: Đang phục vụ Write
+    reg  ack_r; // Đổi thành reg vì do CDC Arbiter cấp
+
+    // Tín hiệu dữ liệu đã qua cầu CDC trả về miền AXI
+    wire [DATA_WIDTH-1:0] cross_prdata;
+    wire                  cross_pslverr;
 
     // ==========================================
-    // 1. WRITE FSM (Quản lý AW, W và B Channels)
+    // 1. WRITE FSM (Miền clk_axi - GIỮ NGUYÊN BẢN GỐC)
     // ==========================================
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk_axi or negedge rst_n) begin
         if (!rst_n) begin
             w_state       <= W_IDLE;
             s_axi_awready <= 1'b0;
@@ -130,7 +131,6 @@ module axi_to_apb_bridge #(
             w_beat_cnt    <= 8'd0;
             w_err_accum   <= 2'b00;
         end else begin
-            // Xóa cờ bvalid khi Master đã nhận response
             if (s_axi_bvalid && s_axi_bready) begin
                 s_axi_bvalid <= 1'b0;
             end
@@ -157,7 +157,7 @@ module axi_to_apb_bridge #(
                         s_axi_wready <= 1'b0;
                         w_data_reg   <= s_axi_wdata;
                         w_strb_reg   <= s_axi_wstrb;
-                        req_w        <= 1'b1; // Yêu cầu Arbiter đẩy ra APB
+                        req_w        <= 1'b1;
                         w_state      <= W_ARB_REQ;
                     end
                 end
@@ -165,14 +165,12 @@ module axi_to_apb_bridge #(
                 W_ARB_REQ: begin
                     if (ack_w) begin
                         req_w <= 1'b0;
-                        // Ghi nhận lỗi từ APB nếu có
-                        if (m_apb_pslverr) w_err_accum <= 2'b10;
+                        // Lấy lỗi từ CDC thay vì m_apb_pslverr trực tiếp
+                        if (cross_pslverr) w_err_accum <= 2'b10;
                         
                         if (w_beat_cnt == w_len_reg) begin
-                            // Đã xong burst
                             w_state <= W_RESP;
                         end else begin
-                            // Tiếp tục beat tiếp theo
                             w_beat_cnt <= w_beat_cnt + 1'b1;
                             w_addr_reg <= w_addr_reg + (1 << w_size_reg);
                             w_state    <= W_DATA;
@@ -184,7 +182,7 @@ module axi_to_apb_bridge #(
                     if (!s_axi_bvalid) begin
                         s_axi_bvalid <= 1'b1;
                         s_axi_bid    <= w_id_reg;
-                        s_axi_bresp  <= w_err_accum; // Trả về lỗi nếu có bất kỳ beat nào bị lỗi
+                        s_axi_bresp  <= w_err_accum;
                         w_state      <= W_IDLE;
                     end
                 end
@@ -193,9 +191,9 @@ module axi_to_apb_bridge #(
     end
 
     // ==========================================
-    // 2. READ FSM (Quản lý AR và R Channels)
+    // 2. READ FSM (Miền clk_axi - GIỮ NGUYÊN BẢN GỐC)
     // ==========================================
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk_axi or negedge rst_n) begin
         if (!rst_n) begin
             r_state       <= R_IDLE;
             s_axi_arready <= 1'b0;
@@ -218,7 +216,7 @@ module axi_to_apb_bridge #(
                         r_size_reg    <= s_axi_arsize;
                         r_prot_reg    <= s_axi_arprot;
                         r_beat_cnt    <= 8'd0;
-                        req_r         <= 1'b1; // Yêu cầu Arbiter đẩy ra APB
+                        req_r         <= 1'b1;
                         r_state       <= R_ARB_REQ;
                     end
                 end
@@ -228,8 +226,9 @@ module axi_to_apb_bridge #(
                         req_r        <= 1'b0;
                         s_axi_rvalid <= 1'b1;
                         s_axi_rid    <= r_id_reg;
-                        s_axi_rdata  <= m_apb_prdata;
-                        s_axi_rresp  <= m_apb_pslverr ? 2'b10 : 2'b00;
+                        // Lấy data từ CDC thay vì m_apb_prdata trực tiếp
+                        s_axi_rdata  <= cross_prdata;
+                        s_axi_rresp  <= cross_pslverr ? 2'b10 : 2'b00;
                         s_axi_rlast  <= (r_beat_cnt == r_len_reg);
                         r_state      <= R_DATA;
                     end
@@ -240,10 +239,8 @@ module axi_to_apb_bridge #(
                         s_axi_rvalid <= 1'b0;
                         s_axi_rlast  <= 1'b0;
                         if (r_beat_cnt == r_len_reg) begin
-                            // Đã xong burst
                             r_state <= R_IDLE;
                         end else begin
-                            // Tiếp tục beat tiếp theo
                             r_beat_cnt <= r_beat_cnt + 1'b1;
                             r_addr_reg <= r_addr_reg + (1 << r_size_reg);
                             req_r      <= 1'b1;
@@ -256,59 +253,131 @@ module axi_to_apb_bridge #(
     end
 
     // ==========================================
-    // 3. APB ARBITER FSM (Định tuyến ra APB Bus)
+    // 3. ASYNC FIFOS (Cầu nối CDC)
     // ==========================================
-    assign ack_w = (apb_state == APB_ACCESS) && m_apb_pready && !apb_grant_read;
-    assign ack_r = (apb_state == APB_ACCESS) && m_apb_pready &&  apb_grant_read;
+    // Width = 1(Wr/Rd) + 32(Addr) + 32(Data) + 4(Strb) + 3(Prot) = 72 bits
+    wire        cmd_fifo_full, cmd_fifo_empty;
+    reg         cmd_fifo_wr;
+    wire        cmd_fifo_rd;
+    wire [71:0] cmd_fifo_wdata;
+    wire [71:0] cmd_fifo_rdata;
 
-    always @(posedge clk or negedge rst_n) begin
+    cdc_async_fifo_wrapper #(.DATA_WIDTH(72), .DEPTH_LOG2(4)) u_cmd_fifo (
+        .wclk(clk_axi), .wrst_n(rst_n), .wen(cmd_fifo_wr), .wdata(cmd_fifo_wdata), .wfull(cmd_fifo_full),
+        .rclk(clk_apb), .rrst_n(rst_n), .ren(cmd_fifo_rd), .rdata(cmd_fifo_rdata), .rempty(cmd_fifo_empty)
+    );
+
+    // Width = 1(Err) + 32(Data) = 33 bits
+    wire        resp_fifo_full, resp_fifo_empty;
+    reg         resp_fifo_wr;
+    reg         resp_fifo_rd;
+    reg  [32:0] resp_fifo_wdata;
+    wire [32:0] resp_fifo_rdata;
+
+    cdc_async_fifo_wrapper #(.DATA_WIDTH(33), .DEPTH_LOG2(4)) u_resp_fifo (
+        .wclk(clk_apb), .wrst_n(rst_n), .wen(resp_fifo_wr), .wdata(resp_fifo_wdata), .wfull(resp_fifo_full),
+        .rclk(clk_axi), .rrst_n(rst_n), .ren(resp_fifo_rd), .rdata(resp_fifo_rdata), .rempty(resp_fifo_empty)
+    );
+
+    // ==========================================
+    // 4. AXI ARBITER (Đẩy vào FIFO - Miền clk_axi)
+    // ==========================================
+    localparam ARB_IDLE = 2'd0, ARB_PUSH = 2'd1, ARB_WAIT = 2'd2;
+    reg [1:0] arb_state;
+    reg       apb_grant_read;
+
+    // Lắp ráp dữ liệu Command đẩy qua FIFO
+    assign cmd_fifo_wdata = apb_grant_read ? 
+                            {1'b0, r_addr_reg, 32'b0, 4'b0, r_prot_reg} :
+                            {1'b1, w_addr_reg, w_data_reg, w_strb_reg, w_prot_reg};
+
+    // Giải nén dữ liệu Response từ FIFO cho Read/Write FSM
+    assign cross_prdata  = resp_fifo_rdata[31:0];
+    assign cross_pslverr = resp_fifo_rdata[32];
+
+    always @(posedge clk_axi or negedge rst_n) begin
         if (!rst_n) begin
-            apb_state      <= APB_IDLE;
-            m_apb_psel     <= 1'b0;
-            m_apb_penable  <= 1'b0;
-            m_apb_pwrite   <= 1'b0;
-            m_apb_paddr    <= {ADDR_WIDTH{1'b0}};
-            m_apb_pwdata   <= {DATA_WIDTH{1'b0}};
-            m_apb_pstrb    <= {(DATA_WIDTH/8){1'b0}};
-            m_apb_pprot    <= 3'd0;
-            apb_grant_read <= 1'b0;
+            arb_state <= ARB_IDLE;
+            cmd_fifo_wr <= 0; resp_fifo_rd <= 0;
+            ack_w <= 0; ack_r <= 0;
+            apb_grant_read <= 0;
         end else begin
-            case (apb_state)
-                APB_IDLE: begin
-                    m_apb_penable <= 1'b0;
-                    m_apb_psel    <= 1'b0;
-                    // Mức ưu tiên: Read > Write (tránh nghẽn kênh CPU fetch lệnh)
+            cmd_fifo_wr <= 0; resp_fifo_rd <= 0;
+            ack_w <= 0; ack_r <= 0;
+
+            case (arb_state)
+                ARB_IDLE: begin
+                    // Ưu tiên Read > Write giống hệt code gốc của bạn
                     if (req_r) begin
-                        m_apb_psel     <= 1'b1;
-                        m_apb_pwrite   <= 1'b0;
-                        m_apb_paddr    <= r_addr_reg;
-                        m_apb_pprot    <= r_prot_reg;
-                        m_apb_pstrb    <= {(DATA_WIDTH/8){1'b0}}; // Đọc không cần STRB
                         apb_grant_read <= 1'b1;
-                        apb_state      <= APB_SETUP;
-                    end 
-                    else if (req_w) begin
-                        m_apb_psel     <= 1'b1;
-                        m_apb_pwrite   <= 1'b1;
-                        m_apb_paddr    <= w_addr_reg;
-                        m_apb_pwdata   <= w_data_reg;
-                        m_apb_pstrb    <= w_strb_reg;
-                        m_apb_pprot    <= w_prot_reg;
+                        arb_state <= ARB_PUSH;
+                    end else if (req_w) begin
                         apb_grant_read <= 1'b0;
-                        apb_state      <= APB_SETUP;
+                        arb_state <= ARB_PUSH;
                     end
                 end
 
-                APB_SETUP: begin
-                    m_apb_penable <= 1'b1;
-                    apb_state     <= APB_ACCESS;
+                ARB_PUSH: begin
+                    if (!cmd_fifo_full) begin
+                        cmd_fifo_wr <= 1'b1;
+                        arb_state <= ARB_WAIT;
+                    end
                 end
 
-                APB_ACCESS: begin
+                ARB_WAIT: begin
+                    // Chờ APB xử lý xong và trả kết quả về resp_fifo
+                    if (!resp_fifo_empty) begin
+                        resp_fifo_rd <= 1'b1;
+                        if (apb_grant_read) ack_r <= 1'b1; // Kích hoạt ack cho Read FSM
+                        else                ack_w <= 1'b1; // Kích hoạt ack cho Write FSM
+                        arb_state <= ARB_IDLE;
+                    end
+                end
+            endcase
+        end
+    end
+
+    // ==========================================
+    // 5. APB MASTER FSM (Xử lý thực thi - Miền clk_apb)
+    // ==========================================
+    reg [1:0] apb_fsm;
+    localparam P_IDLE = 2'd0, P_SETUP = 2'd1, P_ACCESS = 2'd2;
+
+    assign cmd_fifo_rd = (apb_fsm == P_IDLE) && !cmd_fifo_empty && !resp_fifo_full;
+
+    always @(posedge clk_apb or negedge rst_n) begin
+        if (!rst_n) begin
+            apb_fsm <= P_IDLE;
+            m_apb_psel <= 0; m_apb_penable <= 0; m_apb_pwrite <= 0;
+            m_apb_paddr <= 0; m_apb_pwdata <= 0; m_apb_pstrb <= 0; m_apb_pprot <= 0;
+            resp_fifo_wr <= 0; resp_fifo_wdata <= 0;
+        end else begin
+            resp_fifo_wr <= 0;
+            case (apb_fsm)
+                P_IDLE: begin
+                    if (cmd_fifo_rd) begin
+                        m_apb_pwrite <= cmd_fifo_rdata[71];
+                        m_apb_paddr  <= cmd_fifo_rdata[70:39];
+                        m_apb_pwdata <= cmd_fifo_rdata[38:7];
+                        m_apb_pstrb  <= cmd_fifo_rdata[6:3];
+                        m_apb_pprot  <= cmd_fifo_rdata[2:0];
+                        m_apb_psel   <= 1'b1;
+                        apb_fsm      <= P_SETUP;
+                    end
+                end
+                
+                P_SETUP: begin
+                    m_apb_penable <= 1'b1;
+                    apb_fsm <= P_ACCESS;
+                end
+                
+                P_ACCESS: begin
                     if (m_apb_pready) begin
-                        m_apb_psel    <= 1'b0;
+                        m_apb_psel    <= 1'b0; 
                         m_apb_penable <= 1'b0;
-                        apb_state     <= APB_IDLE;
+                        resp_fifo_wdata <= {m_apb_pslverr, m_apb_prdata};
+                        resp_fifo_wr  <= 1'b1;
+                        apb_fsm       <= P_IDLE;
                     end
                 end
             endcase
