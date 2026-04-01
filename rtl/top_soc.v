@@ -561,11 +561,11 @@ module top_soc (
         // Ví dụ: DMA (5) > DCache (4) > ICache (3) > Debug (1)
         .MST_WEIGHT (128'h00000005_00000004_00000003_00000001),
         // Gán địa chỉ Base và Mask cho 5 Slave
-        // S0: ROM (0x0000_0000 - 64KB), S1: RAM (0x2000_0000 - 128KB)
+        // S0: ROM (0x0001_0000 - 64KB), S1: RAM (0x2000_0000 - 128KB)
         // S2: Flash (0x3000_0000 - 16MB), S3: SDRAM (0x8000_0000 - 64MB)
         // S4: APB Bridge (0x4000_0000 - 1MB)
         // S5: CLINT (0x0200_0000 - 64KB)
-        .SLV_BASE_ADDR (192'h0200_0000_4000_0000_8000_0000_3000_0000_2000_0000_0000_0000),
+        .SLV_BASE_ADDR (192'h0200_0000_4000_0000_8000_0000_3000_0000_2000_0000_0001_0000),
         .SLV_ADDR_MASK (192'hFFFF_0000_FFF0_0000_FC00_0000_FF00_0000_FFFE_0000_FFFF_0000)
     ) u_axi_interconnect (
         .ACLK_i          (clk),

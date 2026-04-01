@@ -16,14 +16,21 @@ module apb_watchdog #(
     output reg  [DATA_WIDTH-1:0]  prdata,
     output reg                    pslverr,
 
-    output wire                   wdt_irq,
-    output wire                   wdt_rst
+    output wire                   wdt_irq, // Phải giữ lại để báo động
+    output wire                   wdt_rst  // Phải giữ lại để Reset SoC
 );
 
-    // Registers
-    reg [31:0] wdt_val;     // Đếm tăng dần
-    reg [31:0] wdt_cmp;     // Ngưỡng báo ngắt
-    reg [31:0] wdt_rst_cmp; // Ngưỡng báo Reset
+    // =========================================
+    // REGISTER MAP
+    // 0x00: CTRL     [0] Enable
+    // 0x04: CMP      Ngưỡng kích hoạt ngắt (Cảnh báo sớm)
+    // 0x08: RST_CMP  Ngưỡng kích hoạt Reset cứng
+    // 0x0C: FEED     Ghi 0xFEED_FEED để reset đếm (Cho chó ăn)
+    // =========================================
+
+    reg [31:0] wdt_val;
+    reg [31:0] wdt_cmp;
+    reg [31:0] wdt_rst_cmp;
     reg wdt_en;
 
     assign wdt_irq = wdt_en && (wdt_val >= wdt_cmp);
@@ -39,20 +46,23 @@ module apb_watchdog #(
             wdt_rst_cmp <= 32'hFFFF_FFFF;
             wdt_en      <= 1'b0;
             pready      <= 1'b0;
+            prdata      <= 32'b0;
             pslverr     <= 1'b0;
         end else begin
             pready  <= psel && penable;
             pslverr <= 1'b0;
             
-            // Bộ đếm hoạt động độc lập
-            if (wdt_en) wdt_val <= wdt_val + 1'b1;
+            // Bộ đếm hoạt động độc lập với Bus
+            if (wdt_en) begin
+                wdt_val <= wdt_val + 1'b1;
+            end
 
             if (apb_write) begin
                 case (paddr[7:0])
-                    8'h00: wdt_en <= pwdata[0];
-                    8'h04: wdt_cmp <= pwdata;
+                    8'h00: wdt_en      <= pwdata[0];
+                    8'h04: wdt_cmp     <= pwdata;
                     8'h08: wdt_rst_cmp <= pwdata;
-                    8'h0C: if (pwdata == 32'hFEED_FEED) wdt_val <= 32'd0; // Khóa Feed (Clear)
+                    8'h0C: if (pwdata == 32'hFEED_FEED) wdt_val <= 32'd0;
                     default: pslverr <= 1'b1;
                 endcase
             end

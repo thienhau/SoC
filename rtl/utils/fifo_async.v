@@ -1,7 +1,6 @@
 `timescale 1ns / 1ps
 
-
-module asyn_fifo
+module async_fifo
 #(
     parameter   ASFIFO_TYPE     = 0,    // Async FIFO type: 0-Normal 1-Full-registered
     parameter   DATA_WIDTH      = 8,
