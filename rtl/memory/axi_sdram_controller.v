@@ -17,15 +17,15 @@ module axi_sdram_controller #(
     parameter SDRAM_DATA_WIDTH      = 32, 
     
     // ==========================================
-    // THAM SỐ THỜI GIAN SDRAM (Tín theo chu kỳ Clock - VD: Hệ thống chạy 100MHz = 10ns)
+    // THAM SỐ THỜI GIAN SDRAM (Tính theo chu kỳ Clock - VD: Hệ thống chạy 200MHz = 5ns)
     // ==========================================
-    parameter INIT_DELAY_CYCLES     = 20000, // 200us thời gian khởi động ban đầu
-    parameter TRP_CYCLES            = 2,     // Thời gian Precharge
-    parameter TRCD_CYCLES           = 2,     // Thời gian trễ từ Activate đến Read/Write
+    parameter INIT_DELAY_CYCLES     = 40000, // 200us thời gian khởi động ban đầu
+    parameter TRP_CYCLES            = 4,     // Thời gian Precharge
+    parameter TRCD_CYCLES           = 4,     // Thời gian trễ từ Activate đến Read/Write
     parameter TCAS_CYCLES           = 3,     // Độ trễ CAS (CAS Latency)
-    parameter TRFC_CYCLES           = 7,     // Thời gian làm tươi (Auto-Refresh)
-    parameter TWR_CYCLES            = 2,     // Thời gian phục hồi sau khi Ghi (Write Recovery)
-    parameter REFRESH_PERIOD_CYCLES = 780    // Tần suất làm tươi (VD: 64ms / 8192 rows = 7.8us -> 780 xung nhịp)
+    parameter TRFC_CYCLES           = 14,    // Thời gian làm tươi (Auto-Refresh)
+    parameter TWR_CYCLES            = 4,     // Thời gian phục hồi sau khi Ghi (Write Recovery)
+    parameter REFRESH_PERIOD_CYCLES = 1560   // Tần suất làm tươi 
 )(
     input  wire                     clk,
     input  wire                     rst_n,

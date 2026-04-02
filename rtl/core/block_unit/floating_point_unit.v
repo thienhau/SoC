@@ -10,13 +10,14 @@ module fpu_unit #(
 )(
     input  wire        clk,
     input  wire        reset_n,
+    input  wire        stall_id_ex,
     input  wire        fpu_start,
     input  wire [4:0]  fpu_op,
     input  wire [31:0] operand_a,
     input  wire [31:0] operand_b,
     output reg  [31:0] result,
     output wire        fpu_stall,
-    output reg         fpu_done
+    output wire        fpu_done
 );
 
     // Opcodes
@@ -86,11 +87,9 @@ module fpu_unit #(
     wire w_round  = mant_res[23]; // Bit sau Guard
     wire w_sticky = |mant_res[22:0]; // Các bit cặn bã
 
-    assign fpu_stall = (state != STATE_IDLE) || (fpu_start && state == STATE_IDLE);
-
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
-            state <= STATE_IDLE; fpu_done <= 1'b0; result <= 32'd0;
+            state <= STATE_IDLE; result <= 32'd0;
             mant_a <= 50'd0; mant_b <= 50'd0; mant_res <= 50'd0;
             exp_a <= 9'd0; exp_b <= 9'd0; exp_res <= 9'd0;
             sign_a <= 1'b0; sign_b <= 1'b0; sign_res <= 1'b0;
@@ -98,7 +97,6 @@ module fpu_unit #(
         end else begin
             case (state)
                 STATE_IDLE: begin
-                    fpu_done <= 1'b0;
                     if (fpu_start) begin
                         op_reg <= fpu_op; state <= STATE_UNPACK;
                     end
@@ -298,9 +296,17 @@ module fpu_unit #(
                     state <= STATE_DONE;
                 end
 
-                STATE_DONE: begin fpu_done <= 1'b1; state <= STATE_IDLE; end
+                STATE_DONE: begin 
+                    if (!stall_id_ex) begin
+                        state <= STATE_IDLE;
+                    end
+                 end
                 default: state <= STATE_IDLE;
             endcase
         end
     end
+
+    assign fpu_done  = (state == STATE_DONE);
+    assign fpu_stall = (state != STATE_IDLE && state != STATE_DONE) || (fpu_start && state == STATE_IDLE);
+
 endmodule

@@ -1,5 +1,6 @@
 module branch_prediction_unit (
     input clk, reset_n,
+    input stall,
     input [31:0] pc_in, ex_mem_pc_in,
     input ex_mem_branch, ex_mem_branch_taken, ex_mem_predict_taken, ex_mem_btb_hit,
     input [31:0] ex_mem_branch_target,
@@ -8,10 +9,11 @@ module branch_prediction_unit (
 );
     assign actual_taken = ex_mem_branch && ex_mem_branch_taken;
     assign bpu_correct = (ex_mem_predict_taken == actual_taken);
-    wire [1:0] update_btb = ((!ex_mem_btb_hit && ex_mem_branch && actual_taken) || 
+    wire [1:0] update_btb = stall ? 2'b00 : 
+                            ((!ex_mem_btb_hit && ex_mem_branch && actual_taken) || 
                             (ex_mem_btb_hit && ex_mem_branch && !ex_mem_predict_taken && actual_taken)) ? 2'b01 :
                             ((ex_mem_btb_hit && !ex_mem_branch) ? 2'b10 : 2'b00);
-    wire update_bht = ex_mem_branch;
+    wire update_bht = ex_mem_branch && !stall;
 
     branch_target_buffer BTB (
         .clk(clk),

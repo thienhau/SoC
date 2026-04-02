@@ -256,7 +256,6 @@ module tb_jtag();
         
         .dbg_halt_req(dbg_halt_req),
         .dbg_resume_req(dbg_resume_req),
-        .dbg_step_req(dbg_step_req),
         .dbg_halted(dbg_halted),
         .dbg_reg_read_addr(dbg_reg_read_addr_dump),
         .dbg_reg_read_data(dbg_reg_read_data),

@@ -251,20 +251,20 @@ module riscv_pipeline (
                                ex_mem_ebreak   ? 32'd3        : 32'd0;
 
     // 1. TẦNG IF/ID
-    wire stall_if_id = (dcache_stall | mf_alu_stall | load_use_stall | stall_ID) & ~(flush_trap | flush_branch | flush_jal);
+    wire stall_if_id = dcache_stall | mf_alu_stall | load_use_stall | stall_ID;
     wire flush_if_id = flush_trap | flush_branch | flush_jal | icache_stall;
 
     // 2. TẦNG ID/EX
-    wire stall_id_ex = (dcache_stall | mf_alu_stall | stall_EX) & ~(flush_trap | flush_branch);
+    wire stall_id_ex = dcache_stall | mf_alu_stall | stall_EX;
     wire flush_id_ex = flush_trap | flush_branch | flush_jal | load_use_stall;
 
     // 3. TẦNG EX/MEM
-    wire stall_ex_mem = (dcache_stall | stall_MEM) & ~(flush_trap | flush_branch);
-    wire flush_ex_mem = flush_trap | flush_branch | mf_alu_stall;
+    wire stall_ex_mem = dcache_stall | stall_MEM;
+    wire flush_ex_mem = flush_trap | mf_alu_stall;
 
     // 4. TẦNG MEM/WB
-    wire stall_mem_wb = stall_WB & ~flush_trap;
-    wire flush_mem_wb = flush_trap | dcache_stall;
+    wire stall_mem_wb = dcache_stall | stall_WB;
+    wire flush_mem_wb = flush_trap;
 
     // =========================================================================
     // PROGRAM COUNTER & FLUSH LOGIC
@@ -648,6 +648,7 @@ module riscv_pipeline (
     execute EX (
         .clk(clk),
         .reset_n(reset_n),
+        .stall_id_ex(stall_id_ex),
         .alu_in1(alu_in1),
         .alu_in2(alu_in2),
         .id_ex_alu_ctrl(id_ex_alu_ctrl),
@@ -860,10 +861,13 @@ module riscv_pipeline (
     // =========================================================================
     // BRANCH PREDICTION UNIT
     // =========================================================================
+    wire bpu_stall = stall_mem_wb;
+
     branch_prediction_unit BPU (
         .clk(clk),
         .reset_n(reset_n),
         .pc_in(pc_in),
+        .stall(bpu_stall),
         .ex_mem_pc_in(ex_mem_pc_in),
         .ex_mem_branch(ex_mem_branch),
         .ex_mem_branch_taken(ex_mem_branch_taken),

@@ -80,21 +80,11 @@ module pipeline_control_unit (
     // Bơm NOP từ chu kỳ xả rác THỨ 1 trở đi (Bảo vệ lệnh Step lọt an toàn xuống EX)
     wire inject_nop = is_draining && (drain_cnt >= 7'd1);
 
-    // Tính toán xem các tầng đang chứa lệnh bẻ nhánh có bị kẹt cứng không
-    wire mem_is_stalled = dcache_stall | stall_MEM; 
-    wire ex_is_stalled  = dcache_stall | mf_alu_stall | stall_EX;
-
     always @(*) begin
-        // 1. Tầng MEM già nhất (Trap)
-        flush_trap = (trap_enter || mret_exec) && !mem_is_stalled;
-        
-        // 2. Tầng MEM (Branch): Bị áp chế bởi Trap, và không bắn khi MEM kẹt
-        flush_branch = (!bpu_correct) && !flush_trap && !mem_is_stalled;
+        flush_trap = trap_enter || mret_exec;
+        flush_branch = !bpu_correct;
+        flush_jal = id_ex_jal || id_ex_jalr;
 
-        // 3. Tầng EX (JAL/JALR): Bị áp chế bởi lệnh già hơn, và không bắn khi EX kẹt
-        flush_jal = (id_ex_jal || id_ex_jalr) && !flush_trap && !flush_branch && !ex_is_stalled;
-
-        // 4. Load-use Hazard
         if (inject_nop) begin
             load_use_stall = 1'b1;
         end else begin

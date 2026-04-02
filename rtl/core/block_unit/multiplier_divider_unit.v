@@ -4,6 +4,7 @@
 module multiplier (
     input clk,
     input reset_n,
+    input stall_id_ex,
     input md_type,
     input [31:0] alu_in1,
     input [31:0] alu_in2,
@@ -23,6 +24,7 @@ module multiplier (
     
     localparam STATE_IDLE = 2'b00;
     localparam STATE_BUSY = 2'b01;
+    localparam STATE_DONE = 2'b10;
     
     reg [1:0] state;
     reg [1:0] state_next;
@@ -174,7 +176,7 @@ module multiplier (
                 if (count_temp >= 32) begin
                     md_alu_stall_next = 1'b0;
                     md_alu_done_next = 1'b1;
-                    state_next = STATE_IDLE;
+                    state_next = STATE_DONE;
                     
                     result_sign = 1'b0;
                     if (opcode_reg == 3'b001) begin
@@ -206,6 +208,20 @@ module multiplier (
                             md_result_next = 32'b0;
                         end
                     endcase
+                end
+            end
+
+            STATE_DONE: begin
+                md_alu_stall_next = 1'b0;
+                md_alu_done_next  = 1'b1;
+                md_result_next    = md_result_reg; // Giữ nguyên kết quả cũ
+                
+                // Chỉ thoát khi ID/EX nhả lệnh
+                if (!stall_id_ex) begin
+                    state_next = STATE_IDLE;
+                    md_alu_done_next = 1'b0;
+                end else begin
+                    state_next = STATE_DONE;
                 end
             end
             
@@ -253,6 +269,7 @@ endmodule
 module divider (
     input clk,
     input reset_n,
+    input stall_id_ex,
     input md_type,
     input [31:0] alu_in1,
     input [31:0] alu_in2,
@@ -275,6 +292,7 @@ module divider (
 
     localparam STATE_IDLE = 2'b00;
     localparam STATE_BUSY = 2'b01;
+    localparam STATE_DONE = 2'b10;
 
     reg [1:0] state;
 
@@ -356,8 +374,12 @@ module divider (
                     mask <= mask_tmp;
 
                     if (mask_tmp == 32'd0) begin
-                        state <= STATE_IDLE;
+                        state <= STATE_DONE;
                     end
+                end
+
+                STATE_DONE: begin
+                    if (!stall_id_ex) state <= STATE_IDLE;
                 end
 
                 default: begin
@@ -431,6 +453,11 @@ module divider (
                         end
                     end
                 end
+            end
+            STATE_DONE: begin
+                md_alu_stall_next = 1'b0;
+                md_alu_done_next  = 1'b1;
+                md_result_next    = md_result_reg;
             end
         endcase
     end

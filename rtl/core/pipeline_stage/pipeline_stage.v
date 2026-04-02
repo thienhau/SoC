@@ -199,6 +199,7 @@ endmodule
 module execute (
     input clk,
     input reset_n,
+    input stall_id_ex,
     input [31:0] alu_in1,
     input [31:0] alu_in2,
     input [3:0] id_ex_alu_ctrl,
@@ -244,6 +245,7 @@ module execute (
     multiplier MUL (
         .clk(clk),
         .reset_n(reset_n),
+        .stall_id_ex(stall_id_ex),
         .md_type(id_ex_md_type),
         .alu_in1(alu_in1),
         .alu_in2(alu_in2),
@@ -256,6 +258,7 @@ module execute (
     divider DIV (
         .clk(clk),
         .reset_n(reset_n),
+        .stall_id_ex(stall_id_ex),
         .md_type(id_ex_md_type),
         .alu_in1(alu_in1),
         .alu_in2(alu_in2),
@@ -268,6 +271,7 @@ module execute (
     fpu_unit FPU (
         .clk(clk),
         .reset_n(reset_n),
+        .stall_id_ex(stall_id_ex),
         .fpu_start(id_ex_fpu_en),
         .fpu_op(id_ex_fpu_operation),
         .operand_a(fpu_operand_a),
