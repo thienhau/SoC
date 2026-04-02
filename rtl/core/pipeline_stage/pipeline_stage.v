@@ -127,9 +127,7 @@ module instruction_decode (
     end
     
     wire [31:0] u_imm_ext = {u_imm, 12'b0};
-    wire i_imm_zero_ext = ((opcode == 7'b0010011) && ((funct3 == 3'b111) || (funct3 == 3'b110) || (funct3 == 3'b100))) ||
-                          ((opcode == 7'b0010011) && (funct3 == 3'b011));
-    wire [31:0] i_imm_ext = i_imm_zero_ext ? {20'b0, i_imm} : {{20{i_imm[11]}}, i_imm};
+    wire [31:0] i_imm_ext = {{20{i_imm[11]}}, i_imm};
     wire [31:0] s_imm_ext = {{20{s_imm[11]}}, s_imm};
     wire [31:0] b_imm_ext = {{19{b_imm[11]}}, b_imm, 1'b0};
     wire [31:0] j_imm_ext = {{11{j_imm[19]}}, j_imm, 1'b0};
