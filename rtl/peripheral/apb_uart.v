@@ -247,7 +247,10 @@ module uart_rx (
 
     // 2-FF Synchronizer cho RX pin để chống Metastability
     reg rx_s1, rx_s2;
-    always @(posedge clk) {rx_s2, rx_s1} <= {rx_s1, RX};
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) {rx_s2, rx_s1} <= 2'b11; // Kéo lên mức 1
+        else        {rx_s2, rx_s1} <= {rx_s1, RX};
+    end
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin

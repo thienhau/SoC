@@ -386,7 +386,7 @@ module top_soc (
     wire        ic_rvalid;  wire        ic_rready;
 
     // --- M0. ICACHE ---
-    wire ic_uncache_en = (cpu_inst_addr >= 32'h4000_0000 && cpu_inst_addr <= 32'h4FFF_FFFF);
+    wire ic_uncache_en = (cpu_inst_addr >= 32'h4000_0000 && cpu_inst_addr <= 32'h47FF_FFFF);
     instruction_cache u_icache (
         .clk             (clk_cpu),              // clk_cpu (400MHz)
         .rst_n           (reset_core_n_sync),
@@ -434,7 +434,7 @@ module top_soc (
     wire [4:0]  dc_rid;     wire [31:0] dc_rdata;   wire [1:0]  dc_rresp;   wire        dc_rlast;   wire dc_rvalid; wire dc_rready;
 
     // --- M1. DCACHE ---
-    wire dc_uncache_en = (cpu_data_addr >= 32'h4000_0000 && cpu_data_addr <= 32'h4FFF_FFFF);
+    wire dc_uncache_en = (cpu_data_addr >= 32'h4000_0000 && cpu_data_addr <= 32'h47FF_FFFF);
     data_cache u_dcache (
         .clk             (clk_cpu),              // clk_cpu (400MHz)
         .rst_n           (reset_core_n_sync),
@@ -520,7 +520,7 @@ module top_soc (
         .MST_AMT(MST_AMT), .SLV_AMT(SLV_AMT),
         .MST_WEIGHT (128'h00000005_00000004_00000003_00000001),
         .SLV_BASE_ADDR (192'h0200_0000_4000_0000_8000_0000_3000_0000_2000_0000_0001_0000),
-        .SLV_ADDR_MASK (192'hFFFF_0000_FFF0_0000_FC00_0000_FF00_0000_FFFE_0000_FFFF_0000)
+        .SLV_ADDR_MASK (192'hFFFF_0000_F800_0000_FC00_0000_FF00_0000_FFFE_0000_FFFF_0000)
     ) u_axi_interconnect (
         .ACLK_i          (clk_axi), // AXI Bus chạy clk_axi (luôn sống)
         .ARESETn_i       (reset_axi_n_sync),

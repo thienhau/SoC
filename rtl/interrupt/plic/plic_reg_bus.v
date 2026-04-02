@@ -49,6 +49,7 @@ module plic_apb_reg (
     integer i;
     reg [31:0] write_idx;
     reg [31:0] read_idx;
+    wire [21:0] plic_offset = paddr[21:0];
 
     // --- WRITE LOGIC ---
     always @(posedge clk_i or negedge rst_ni) begin
@@ -61,14 +62,14 @@ module plic_apb_reg (
             complete_o <= 0; 
             
             if (apb_write) begin
-                if (paddr >= 32'h000000 && paddr < 32'h000080) begin
-                    write_idx = paddr[6:2];
+                if (plic_offset >= 22'h000000 && plic_offset < 22'h000080) begin
+                    write_idx = plic_offset[6:2];
                     if (write_idx > 0 && write_idx < `PLIC_NUM_SRC) 
                         prio_reg[write_idx] <= pwdata[`PLIC_PRIO_WIDTH-1:0];
                 end
-                else if (paddr == 32'h002000) ie_reg <= pwdata[`PLIC_NUM_SRC-1:0];
-                else if (paddr == 32'h200000) threshold_reg <= pwdata[`PLIC_PRIO_WIDTH-1:0];
-                else if (paddr == 32'h200004) complete_o <= pwdata;
+                else if (plic_offset == 22'h002000) ie_reg <= pwdata[`PLIC_NUM_SRC-1:0];
+                else if (plic_offset == 22'h200000) threshold_reg <= pwdata[`PLIC_PRIO_WIDTH-1:0];
+                else if (plic_offset == 22'h200004) complete_o <= pwdata;
             end
         end
     end
@@ -84,15 +85,25 @@ module plic_apb_reg (
             if (apb_read) begin
                 prdata <= 32'h0; 
                 
-                if (paddr >= 32'h000000 && paddr < 32'h000080) begin
-                    read_idx = paddr[6:2];
+                if (plic_offset >= 22'h000000 && plic_offset < 22'h000080) begin
+                    read_idx = plic_offset[6:2];
                     if (read_idx < `PLIC_NUM_SRC) 
                         prdata <= { {32-`PLIC_PRIO_WIDTH{1'b0}}, prio_reg[read_idx] };
                 end
-                else if (paddr == 32'h001000) prdata <= ip_i;
-                else if (paddr == 32'h002000) prdata <= ie_reg;
-                else if (paddr == 32'h200000) prdata <= { {32-`PLIC_PRIO_WIDTH{1'b0}}, threshold_reg };
-                else if (paddr == 32'h200004) begin
+                // Đọc Pending: Offset 0x001000
+                else if (plic_offset == 22'h001000) begin
+                    prdata <= ip_i;
+                end
+                // Đọc Enable: Offset 0x002000
+                else if (plic_offset == 22'h002000) begin
+                    prdata <= ie_reg;
+                end
+                // Đọc Threshold: Offset 0x200000
+                else if (plic_offset == 22'h200000) begin
+                    prdata <= { {32-`PLIC_PRIO_WIDTH{1'b0}}, threshold_reg };
+                end
+                // Đọc Claim: Offset 0x200004
+                else if (plic_offset == 22'h200004) begin
                     prdata  <= claim_id_i;
                     claim_o <= claim_id_i; 
                 end
