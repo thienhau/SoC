@@ -27,7 +27,7 @@ module register_file (
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
-            x2_sp <= 32'd4096;
+            x2_sp <= 32'h8001_0000;
         end else begin
             // Ưu tiên cao nhất cho Debug Mode ghi đè
             if (dbg_mode && dbg_write_en) begin
@@ -93,9 +93,7 @@ module f_register_file (
     integer i;
     always @(posedge clk) begin
         if (!reset_n) begin
-            for (i = 0; i < 32; i = i + 1) begin
-                f_regfile[i] <= 32'b0;
-            end
+
         end else begin
             // Ưu tiên cao nhất cho Debug Mode ghi đè
             if (dbg_mode && dbg_write_en) begin
@@ -257,10 +255,10 @@ module csr_register_file (
                 end
             end
             // 2. OpenOCD chủ động ghi đè DPC / DCSR qua lệnh Debug
-            else if (dbg_reg_write_en && dbg_reg_write_addr == 12'h07b1) begin
+            else if (dbg_reg_write_en && dbg_reg_write_addr == 12'h7b1) begin
                 dpc <= dbg_reg_write_data;
             end
-            else if (dbg_reg_write_en && dbg_reg_write_addr == 12'h07b0) begin
+            else if (dbg_reg_write_en && dbg_reg_write_addr == 12'h7b0) begin
                 dcsr <= dbg_reg_write_data;
             end
             // Nếu phần mềm cố tình ghi đè DPC bằng lệnh CSR write nội bộ...

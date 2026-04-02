@@ -35,7 +35,11 @@ module apb_i2c #(
     output wire                  dma_tx_req,
     output wire                  dma_rx_req
 );
-
+    localparam S_IDLE=0, S_START_A=1, S_START_B=2, S_START_C=3;
+    localparam S_BIT_A=4, S_BIT_B=5, S_BIT_C=6, S_BIT_D=7;
+    localparam S_ACK_A=8, S_ACK_B=9, S_ACK_C=10, S_ACK_D=11;
+    localparam S_STOP_A=12, S_STOP_B=13, S_STOP_C=14;
+    
     // --- Thanh ghi nội bộ miền APB ---
     reg [15:0] reg_prer;
     reg [7:0]  reg_cmd;
@@ -57,6 +61,10 @@ module apb_i2c #(
     reg  core_done;
     reg  core_rx_ack;
     reg [7:0] core_rx_data;
+
+    reg [4:0]  state;
+    wire core_busy_sync, core_done_sync, core_rx_ack_sync;
+    wire core_busy = (state != S_IDLE);
 
     // ============================================================
     // 1. APB INTERFACE & REGISTER LOGIC (Miền pclk)
@@ -135,10 +143,7 @@ module apb_i2c #(
         .clk_dst(i2c_clk), .rst_dst_n(i2c_rst_n), .pulse_dst(cmd_trigger_core)
     );
 
-    // Đồng bộ các Cờ Trạng thái từ Core về APB
-    wire core_busy_sync, core_done_sync, core_rx_ack_sync;
-    wire core_busy = (state != S_IDLE);
-    
+    // Đồng bộ các Cờ Trạng thái từ Core về APB    
     cdc_sync_bit u_sync_busy (.clk_dst(pclk), .rst_dst_n(presetn), .d_in(core_busy), .q_out(core_busy_sync));
     cdc_sync_bit u_sync_done (.clk_dst(pclk), .rst_dst_n(presetn), .d_in(core_done), .q_out(core_done_sync));
     cdc_sync_bit u_sync_ack  (.clk_dst(pclk), .rst_dst_n(presetn), .d_in(core_rx_ack), .q_out(core_rx_ack_sync));
@@ -183,17 +188,11 @@ module apb_i2c #(
     assign scl_o   = 1'b0;    
     assign sda_o   = 1'b0;
     
-    reg [4:0]  state;
     reg [15:0] tick_cnt;
     reg [2:0]  bit_cnt;
     reg [7:0]  shift_reg;
     
     wire tick = (tick_cnt == 0);
-
-    localparam S_IDLE=0, S_START_A=1, S_START_B=2, S_START_C=3;
-    localparam S_BIT_A=4, S_BIT_B=5, S_BIT_C=6, S_BIT_D=7;
-    localparam S_ACK_A=8, S_ACK_B=9, S_ACK_C=10, S_ACK_D=11;
-    localparam S_STOP_A=12, S_STOP_B=13, S_STOP_C=14;
 
     always @(posedge i2c_clk or negedge i2c_rst_n) begin
         if (!i2c_rst_n) begin

@@ -56,6 +56,10 @@ module apb_uart #(
     
     // Core Status Signals (từ uart_clk domain)
     wire tx_busy, rx_busy, frame_error, timeout_error;
+
+    wire baud_tx_en, baud_rx_en;
+    wire tx_core_ready;
+    wire [7:0] rx_fifo_rdata_core;
     
     // Đồng bộ hóa Status từ uart_clk sang pclk (2-FF CDC)
     reg [3:0] status_sync1, status_sync2;
@@ -144,10 +148,6 @@ module apb_uart #(
     // ==========================================
     // 4. UART Protocol Cores (uart_clk domain)
     // ==========================================
-    wire baud_tx_en, baud_rx_en;
-    wire tx_core_ready;
-    wire [7:0] rx_fifo_rdata_core;
-
     baud_gen u_baud_gen (
         .clk(uart_clk),             .rst_n(uart_rst_n),
         .tx_divisor(reg_clk_div[15:0]), .rx_divisor(reg_clk_div[31:16]),

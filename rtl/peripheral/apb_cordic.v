@@ -22,24 +22,37 @@ module apb_cordic #(
     // BẢNG THANH GHI (REGISTER MAP)
     // 0x00: CTRL    [0] Start (Tự động clear)
     // 0x04: STATUS  [0] Done (Tự clear khi Start), [1] Busy
-    // 0x08: X_IN    (Scale factor K = 39814)
-    // 0x0C: Y_IN    (Thường = 0)
-    // 0x10: Z_IN    (Góc đầu vào)
-    // 0x14: X_OUT   (Kết quả Cos - Read Only)
-    // 0x18: Y_OUT   (Kết quả Sin - Read Only)
-    // 0x1C: Z_OUT   (Phần dư của góc - Read Only)
+    // 0x08: X_IN    (Scale factor K chuẩn 16 iter = 39797. Định dạng Q16.16)
+    // 0x0C: Y_IN    (Thường = 0. Định dạng Q16.16)
+    // 0x10: Z_IN    (Góc đầu vào - ĐỊNH DẠNG BAM 32-BIT. 180 độ = 0x7FFFFFFF)
+    // 0x14: X_OUT   (Kết quả Cos - Read Only. Định dạng Q16.16)
+    // 0x18: Y_OUT   (Kết quả Sin - Read Only. Định dạng Q16.16)
+    // 0x1C: Z_OUT   (Phần dư của góc - Read Only. Định dạng BAM)
     // =========================================
 
-    // Bảng bộ nhớ tra cứu Atan cho 16 vòng lặp (Định dạng Q16.16)
-    wire [31:0] atan_table [0:15];
-    assign atan_table[0]  = 32'd2949120; assign atan_table[1]  = 32'd1740967;
-    assign atan_table[2]  = 32'd919879;  assign atan_table[3]  = 32'd466945; 
-    assign atan_table[4]  = 32'd234378;  assign atan_table[5]  = 32'd117303; 
-    assign atan_table[6]  = 32'd58666;   assign atan_table[7]  = 32'd29334;  
-    assign atan_table[8]  = 32'd14667;   assign atan_table[9]  = 32'd7333;   
-    assign atan_table[10] = 32'd3666;    assign atan_table[11] = 32'd1833;   
-    assign atan_table[12] = 32'd916;     assign atan_table[13] = 32'd458;    
-    assign atan_table[14] = 32'd229;     assign atan_table[15] = 32'd114;    
+    // Bảng bộ nhớ tra cứu Atan cho 16 vòng lặp (Định dạng BAM 32-bit)
+    // Tính bằng công thức: (atan(2^-i) / 180) * (2^31)
+    wire signed [31:0] atan_table [0:15];
+    assign atan_table[0]  = 32'sd536870912; // 45.00000 deg
+    assign atan_table[1]  = 32'sd316933406; // 26.56505 deg
+    assign atan_table[2]  = 32'sd167458907; // 14.03624 deg
+    assign atan_table[3]  = 32'sd85004756;  // 7.12501 deg
+    assign atan_table[4]  = 32'sd42667331;  // 3.57633 deg
+    assign atan_table[5]  = 32'sd21354465;  // 1.78991 deg
+    assign atan_table[6]  = 32'sd10679838;  // 0.89517 deg
+    assign atan_table[7]  = 32'sd5340245;   // 0.44761 deg
+    assign atan_table[8]  = 32'sd2670163;   // 0.22381 deg
+    assign atan_table[9]  = 32'sd1335087;   // 0.11190 deg
+    assign atan_table[10] = 32'sd667544;    // 0.05595 deg
+    assign atan_table[11] = 32'sd333772;    // 0.02797 deg
+    assign atan_table[12] = 32'sd166886;    // 0.01398 deg
+    assign atan_table[13] = 32'sd83443;     // 0.00699 deg
+    assign atan_table[14] = 32'sd41722;     // 0.00349 deg
+    assign atan_table[15] = 32'sd20861;     // 0.00174 deg
+
+    // Góc 90 độ dùng cho Pre-rotation trong hệ BAM
+    localparam signed [31:0] BAM_DEG_90     = 32'sd1073741824; //  90 độ
+    localparam signed [31:0] BAM_NEG_DEG_90 = -32'sd1073741824; // -90 độ
 
     // Thanh ghi nội bộ
     reg [31:0] reg_ctrl;
@@ -67,7 +80,7 @@ module apb_cordic #(
         if (!presetn) begin
             reg_ctrl   <= 32'd0;
             reg_status <= 32'd0;
-            reg_xin    <= 32'd39814; // Hằng số K mặc định
+            reg_xin    <= 32'd39797; // Hằng số K chuẩn cho 16 vòng lặp
             reg_yin    <= 32'd0;
             reg_zin    <= 32'd0;
             pready     <= 1'b0;
@@ -135,9 +148,24 @@ module apb_cordic #(
                     iter_cnt <= 5'd0;
                     if (reg_ctrl[0]) begin // Nhận lệnh Start từ APB
                         state <= CALC;
-                        x_reg <= reg_xin;
-                        y_reg <= reg_yin;
-                        z_reg <= reg_zin;
+                        
+                        // LOGIC PRE-ROTATION: Đưa góc về khoảng [-90, 90]
+                        if ($signed(reg_zin) > BAM_DEG_90) begin
+                            // Góc > 90 độ: Xoay +90 độ trước
+                            x_reg <= -$signed(reg_yin);
+                            y_reg <= $signed(reg_xin);
+                            z_reg <= $signed(reg_zin) - BAM_DEG_90;
+                        end else if ($signed(reg_zin) < BAM_NEG_DEG_90) begin
+                            // Góc < -90 độ: Xoay -90 độ trước
+                            x_reg <= $signed(reg_yin);
+                            y_reg <= -$signed(reg_xin);
+                            z_reg <= $signed(reg_zin) - BAM_NEG_DEG_90; // Hoặc: + BAM_DEG_90
+                        end else begin
+                            // Nằm trong vùng an toàn, nạp bình thường
+                            x_reg <= $signed(reg_xin);
+                            y_reg <= $signed(reg_yin);
+                            z_reg <= $signed(reg_zin);
+                        end
                     end
                 end
 

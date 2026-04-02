@@ -33,6 +33,8 @@ module apb_spi #(
     output wire                   dma_tx_req,
     output wire                   dma_rx_req
 );
+    localparam IDLE = 0, PHASE1 = 1, PHASE2 = 2;
+    reg [2:0]  state;
 
     // --- Miền APB ---
     reg [31:0] reg_div;
@@ -51,6 +53,11 @@ module apb_spi #(
     reg [7:0]  spi_tx_shift;
     reg [7:0]  spi_rx_shift;
     reg        core_done;
+
+    wire core_busy_sync, core_done_sync;
+    reg  core_done_sync_dly; // Dùng để bắt cạnh lên của core_done_sync
+    
+    wire core_busy = (state != IDLE) || (!tx_empty);
 
     // ============================================================
     // 1. APB INTERFACE (Miền pclk)
@@ -115,10 +122,6 @@ module apb_spi #(
     end
 
     // Đồng bộ tín hiệu Trạng thái
-    wire core_busy_sync, core_done_sync;
-    reg  core_done_sync_dly; // Dùng để bắt cạnh lên của core_done_sync
-    
-    wire core_busy = (state != IDLE) || (!tx_empty);
     cdc_sync_bit u_sync_busy (.clk_dst(pclk), .rst_dst_n(presetn), .d_in(core_busy), .q_out(core_busy_sync));
     cdc_sync_bit u_sync_done (.clk_dst(pclk), .rst_dst_n(presetn), .d_in(core_done), .q_out(core_done_sync));
     
@@ -161,8 +164,6 @@ module apb_spi #(
         else            {miso_sync2, miso_sync1} <= {miso_sync1, miso};
     end
 
-    localparam IDLE = 0, PHASE1 = 1, PHASE2 = 2;
-    reg [2:0]  state;
     reg [31:0] clk_cnt;
     reg [2:0]  bit_cnt;
     reg        sclk_reg;

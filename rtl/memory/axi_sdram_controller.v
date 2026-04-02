@@ -360,6 +360,7 @@ module axi_sdram_controller #(
                     // THỰC THI GHI DỮ LIỆU (WRITE BURST)
                     // -----------------------------------------------------------------
                     ST_WRITE_BEAT: begin
+                        s_axi_awready <= 1'b0;
                         s_axi_wready <= 1'b1;
                         
                         if (s_axi_wvalid && s_axi_wready) begin
@@ -404,6 +405,7 @@ module axi_sdram_controller #(
                     // THỰC THI ĐỌC DỮ LIỆU (READ BURST)
                     // -----------------------------------------------------------------
                     ST_READ_BEAT: begin
+                        s_axi_arready <= 1'b0;
                         cmd_reg <= CMD_READ;
                         ba_reg <= target_bank;
                         addr_reg <= {3'b000, 1'b0, 1'b0, target_col}; // Auto-precharge = 0
