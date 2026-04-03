@@ -458,6 +458,7 @@ endmodule
 // AXI interface
 //   1 shared AXI master port — round-robin giữa N_CH kênh
 // ============================================================
+`include "dma_define.vh"
 
 module dma_engine #(
     parameter N_CH         = 4,
@@ -473,7 +474,7 @@ module dma_engine #(
     parameter TIMEOUT_W    = 10,
     parameter PERIPH_NUM_W = 5,
     parameter LEN_FIELD_W  = 16,
-    parameter APB_ADDR_W   = 14,
+    parameter APB_ADDR_W   = 13,
     // Giá trị default cho cfg_tokens và cfg_out_max của các kênh.
     // Phải là hằng số (không thể dùng expression trong Verilog-2001 port connection).
     // DEF_TOKENS ≤ 2^TOKEN_W - 1, DEF_OUTS ≤ 2^OUT_W - 1
@@ -504,7 +505,6 @@ module dma_engine #(
     output wire [ADDR_W-1:0]      ARADDR,
     output wire [LEN_W-1:0]       ARLEN,
     output wire [2:0]             ARSIZE,
-    output wire [1:0]             ARBURST,
     output wire [ID_W-1:0]        ARID,
     output wire                   ARVALID,
     input  wire                   ARREADY,
@@ -521,7 +521,6 @@ module dma_engine #(
     output wire [ADDR_W-1:0]      AWADDR,
     output wire [LEN_W-1:0]       AWLEN,
     output wire [2:0]             AWSIZE,
-    output wire [1:0]             AWBURST,
     output wire [ID_W-1:0]        AWID,
     output wire                   AWVALID,
     input  wire                   AWREADY,
@@ -570,7 +569,6 @@ module dma_engine #(
     localparam STAT_DONE_BIT   = 1;
     localparam STAT_ERR_LSB    = 2;
     localparam STAT_ERR_MSB    = 3;  // 2-bit err code
-
     // Per-channel registers
     reg [ADDR_W-1:0]      ch_src    [0:N_CH-1];
     reg [ADDR_W-1:0]      ch_dst    [0:N_CH-1];
@@ -594,33 +592,43 @@ module dma_engine #(
     // channel index = paddr[APB_ADDR_W-1:`DMA_CH_STRIDE]
     wire [N_CH_W-1:0] ch_idx = apb_paddr[N_CH_W+`DMA_CH_STRIDE-1:`DMA_CH_STRIDE];
     wire [7:0]        reg_off = apb_paddr[7:0];
-
-    // is_global: địa chỉ REG_GLOBAL_CTRL = 12'hF00
-    // So sánh trực tiếp 12 bit thấp với hằng số từ define
     wire is_global = (apb_paddr[11:0] == `REG_GLOBAL_CTRL);
-    wire is_ch_reg = ~is_global & (ch_idx < N_CH[N_CH_W-1:0]);
-
-    // pready: 1 cycle latency
-    always @(posedge clk or negedge rst_n)
-        apb_pready <= !rst_n ? 1'b0 : (apb_psel & ~apb_penable);
-
+    localparam [N_CH_W:0] N_CH_CMP = N_CH;   // N_CH_W+1 bits, holds 0..N_CH safely
+    wire is_ch_reg = ~is_global & (ch_idx < N_CH_CMP);
+    reg soft_rst_r;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) soft_rst_r <= 1'b0;
+        else if (apb_wr & is_global & apb_pwdata[0]) soft_rst_r <= 1'b1;
+        else soft_rst_r <= 1'b0;   // auto-clear after 1 cycle
+    end
+    // Combine với hard rst_n: nếu một trong hai active → reset kênh
+    wire ch_rst_n = rst_n & ~soft_rst_r;
+    always @(posedge clk or negedge rst_n) begin
+        apb_pready <= !rst_n ? 1'b0 : (apb_psel & apb_penable);
+    end
     assign apb_pslverr = 1'b0;
 
     // APB write
     integer n;
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+        if (!rst_n || soft_rst_r) begin
+            // Hard reset OR soft reset: clear all channel control registers
             for (n = 0; n < N_CH; n = n + 1) begin
-                ch_src[n]     <= {ADDR_W{1'b0}};
-                ch_dst[n]     <= {ADDR_W{1'b0}};
-                ch_len[n]     <= {LEN_FIELD_W{1'b0}};
-                ch_bmax[n]    <= MAX_BURST[BURST_W-1:0];
-                ch_si[n]      <= 1'b1;
-                ch_di[n]      <= 1'b1;
-                ch_pnum[n]    <= {PERIPH_NUM_W{1'b0}};
                 ch_start_r[n] <= 1'b0;
-                ch_int_en[n]  <= 1'b1;
                 ch_int_st[n]  <= 2'b00;
+            end
+            // On hard reset only: also clear config registers
+            if (!rst_n) begin
+                for (n = 0; n < N_CH; n = n + 1) begin
+                    ch_src[n]    <= {ADDR_W{1'b0}};
+                    ch_dst[n]    <= {ADDR_W{1'b0}};
+                    ch_len[n]    <= {LEN_FIELD_W{1'b0}};
+                    ch_bmax[n]   <= MAX_BURST[BURST_W-1:0];
+                    ch_si[n]     <= 1'b1;
+                    ch_di[n]     <= 1'b1;
+                    ch_pnum[n]   <= {PERIPH_NUM_W{1'b0}};
+                    ch_int_en[n] <= 1'b1;
+                end
             end
         end else begin
             // Clear start pulses mỗi cycle
@@ -655,8 +663,6 @@ module dma_engine #(
             end
         end
     end
-
-    // APB read
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             apb_prdata <= 32'h0;
@@ -673,10 +679,14 @@ module dma_engine #(
                                        ch_si[ch_idx],
                                        ch_bmax[ch_idx],
                                        1'b0 };       // [0]=write-only start
+                    // STATUS: [0]=active, [1]=done (latched = ch_int_st[0]),
+                    //         [3:2]=err
+                    // Dùng ch_int_st[n][0] thay vì ch_done (1-cycle pulse)
+                    // để STATUS.done=1 bền vững cho đến khi SW W1C.
                     `REG_STATUS:   apb_prdata <= {
                                        {(32-STAT_ERR_MSB-1){1'b0}},
                                        ch_err[ch_idx],
-                                       ch_done[ch_idx],
+                                       ch_int_st[ch_idx][0],
                                        ch_active[ch_idx] };
                     `REG_INT_EN:   apb_prdata <= {31'h0, ch_int_en[ch_idx]};
                     `REG_INT_STAT: apb_prdata <= {30'h0, ch_int_st[ch_idx]};
@@ -685,8 +695,6 @@ module dma_engine #(
             end else begin
                 apb_prdata <= 32'h0;
             end
-        end else if (apb_pready) begin
-            apb_prdata <= 32'h0;  // clear sau khi read
         end
     end
 
@@ -697,7 +705,7 @@ module dma_engine #(
             assign irq[gi] = |ch_int_st[gi];
         end
     endgenerate
-    // Per-channel signal buses (packed)
+
     // RD cmd bus
     wire [N_CH-1:0]         ch_rd_cmd_valid;
     wire [N_CH-1:0]         ch_rd_cmd_ready;
@@ -750,6 +758,8 @@ module dma_engine #(
                 .ADDR_W       (ADDR_W),
                 .LEN_W        (LEN_W),
                 .ID_W         (ID_W),
+                .N_CH_W       (N_CH_W),   // FIX ID: channel index bits
+                .CH_IDX       (gi),        // FIX ID: this channel's index
                 .FIFO_DEPTH   (FIFO_DEPTH),
                 .MAX_BURST    (MAX_BURST),
                 .BURST_W      (BURST_W),
@@ -760,7 +770,7 @@ module dma_engine #(
                 .LEN_FIELD_W  (LEN_FIELD_W)
             ) u_ch (
                 .clk            (clk),
-                .rst_n          (rst_n),
+                .rst_n          (ch_rst_n),   // soft reset support
                 .cfg_src_addr   (ch_src[gi]),
                 .cfg_dst_addr   (ch_dst[gi]),
                 .cfg_len        (ch_len[gi]),
@@ -831,17 +841,23 @@ module dma_engine #(
     // Round-robin arbiter — RD commands -> axi4_master_rd
     wire [N_CH-1:0] rd_grant;
 
-    rr_arbiter #(.N(N_CH)) u_rd_arb (
-        .clk   (clk),
-        .rst_n (rst_n),
-        .req   (ch_rd_cmd_valid),
-        .grant (rd_grant)
+    arbiter_iwrr_1cycle #(
+        .P_REQUESTER_NUM(N_CH),
+        .P_REQUESTER_WEIGHT({32'd1, 32'd2, 32'd3, 32'd4}) // Chỉ cần truyền 2 param này
+    ) u_rd_arb (
+        .clk             (clk),
+        .rst_n           (ch_rst_n),
+        .req_i           (ch_rd_cmd_valid),
+        .req_weight_i    ({(N_CH*32){1'b0}}), // unused, set to 0 or any value since we're using static weights
+        .num_grant_req_i (1'b0),  // unused, set to 0 or any value
+        .grant_ready_i   (rd_cmd_ready_top),  
+        .grant_valid_o   (rd_grant)
     );
 
     // Assign rd_cmd_ready dựa vào grant
     generate
         for (gi = 0; gi < N_CH; gi = gi + 1) begin : gen_rd_ready
-            assign ch_rd_cmd_ready[gi] = rd_grant[gi];
+            assign ch_rd_cmd_ready[gi] = rd_grant[gi] & rd_cmd_ready_top;
         end
     endgenerate
 
@@ -860,8 +876,7 @@ module dma_engine #(
     onehot_mux #(.DATA_W(ID_W),   .N(N_CH)) mux_arid (
         .din(ch_rd_cmd_id),   .sel(rd_grant), .dout(mux_rd_id));
 
-    // axi4_master_rd instance
-    wire rd_cmd_valid_top = |rd_grant;
+    wire rd_cmd_valid_top = |(rd_grant & ch_rd_cmd_valid);
     wire rd_cmd_ready_top;
     wire rd_rsp_valid_top;
     wire [ID_W-1:0] rd_rsp_id_top;
@@ -883,7 +898,7 @@ module dma_engine #(
         .TIMEOUT_W (TIMEOUT_W)
     ) u_rd_master (
         .clk         (clk),
-        .rst_n       (rst_n),
+        .rst_n       (ch_rst_n),   // soft reset clears cmd_fifo & AXI state
         .cmd_valid   (rd_cmd_valid_top),
         .cmd_ready   (rd_cmd_ready_top),
         .cmd_addr    (mux_rd_addr),
@@ -902,7 +917,6 @@ module dma_engine #(
         .ARADDR      (ARADDR),
         .ARLEN       (ARLEN),
         .ARSIZE      (ARSIZE),
-        .ARBURST     (ARBURST),
         .ARID        (ARID),
         .ARVALID     (ARVALID),
         .ARREADY     (ARREADY),
@@ -914,40 +928,68 @@ module dma_engine #(
         .RREADY      (RREADY)
     );
 
-    // Route RD data/rsp về đúng kênh theo ID
     generate
         for (gi = 0; gi < N_CH; gi = gi + 1) begin : gen_rd_route
-            // Lấy N_CH_W bit thấp của dout_id làm channel index
             assign ch_rd_dat_valid[gi] =
-                rd_dout_valid & (rd_dout_id[N_CH_W-1:0] == gi[N_CH_W-1:0]);
+                rd_dout_valid & (rd_dout_id[ID_W-1:ID_W-N_CH_W] == gi[N_CH_W-1:0]);
             assign ch_rd_dat_data[gi*`AXI_DATA_W+:`AXI_DATA_W] = rd_dout_data;
             assign ch_rd_dat_last[gi]  = rd_dout_last;
 
             assign ch_rd_rsp_valid[gi] =
-                rd_rsp_valid_top & (rd_rsp_id_top[N_CH_W-1:0] == gi[N_CH_W-1:0]);
+                rd_rsp_valid_top & (rd_rsp_id_top[ID_W-1:ID_W-N_CH_W] == gi[N_CH_W-1:0]);
             assign ch_rd_rsp_id[gi*ID_W+:ID_W]   = rd_rsp_id_top;
             assign ch_rd_rsp_err[gi*2+:2]         = rd_rsp_err_top;
-
-            assign ch_timeout_rd[gi] = rd_timeout_top;
+            assign ch_timeout_rd[gi] = rd_timeout_top &
+                (ARVALID ? (ARID[ID_W-1:ID_W-N_CH_W] == gi[N_CH_W-1:0])
+                          : rd_grant[gi]);
         end
     endgenerate
 
-    // rd_dout_ready: OR của kênh đang nhận
-    assign rd_dout_ready = |ch_rd_dat_ready;
+    // rd_dout_ready: chỉ assert khi kênh ĐÍCH (khớp dout_id) có FIFO ready.
 
-    // Round-robin arbiter — WR commands → axi4_master_wr
-    wire [N_CH-1:0] wr_grant;
-
-    rr_arbiter #(.N(N_CH)) u_wr_arb (
-        .clk   (clk),
-        .rst_n (rst_n),
-        .req   (ch_wr_cmd_valid),
-        .grant (wr_grant)
+    assign rd_dout_ready = |(ch_rd_dat_valid & ch_rd_dat_ready);
+    wire [N_CH-1:0] wr_grant_pulse;  // registered output từ rr_arbiter
+    wire wr_arb_accept = wr_cmd_fire_top | (wr_cmd_ready_top & ~|wr_dat_grant_r & ~wr_cmd_valid_top);
+    arbiter_iwrr_1cycle #(
+        .P_REQUESTER_NUM(N_CH),
+        .P_REQUESTER_WEIGHT({32'd1, 32'd2, 32'd3, 32'd4}) // Chỉ cần truyền 2 param này
+    ) u_wr_arb (
+        .clk             (clk),
+        .rst_n           (ch_rst_n),
+        .req_i           (ch_wr_cmd_valid),
+        .req_weight_i    ({(N_CH*32){1'b0}}), // unused, set to 0 or any value since we're using static weights
+        .num_grant_req_i (1'b0),  // unused, set to 0 or any value
+        .grant_ready_i   (wr_arb_accept),  
+        .grant_valid_o   (wr_grant_pulse)
     );
+
+    reg  [N_CH-1:0] wr_grant_r;
+    wire            wr_cmd_fire_top;  // forward ref, driven after wr_cmd_ready_top
+
+    always @(posedge clk or negedge ch_rst_n) begin
+        if (!ch_rst_n) begin
+            wr_grant_r <= {N_CH{1'b0}};
+        end else begin
+            if (wr_cmd_fire_top) begin
+                // Handshake xong: advance đến kênh tiếp theo
+                wr_grant_r <= wr_grant_pulse;
+            end else if (wr_cmd_ready_top & ~|wr_dat_grant_r & ~wr_cmd_valid_top) begin
+                wr_grant_r <= wr_grant_pulse;
+            end
+            // else: giữ nguyên (đang chờ AWREADY, hoặc kênh đang phát W data)
+        end
+    end
+
+    wire [N_CH-1:0] wr_grant = wr_grant_r;
+
+    // wr_burst_gate: cho phép AW mới chỉ khi không có W burst đang chạy,
+    // HOẶC đúng cycle WLAST (pipeline). Dùng chung cho CẢ ch_wr_cmd_ready
+    // VÀ wr_cmd_valid_gated để dma_channel và u_wr_master luôn đồng thuận.
+    wire wr_burst_gate = ~|wr_dat_grant_r | wr_wlast_done;
 
     generate
         for (gi = 0; gi < N_CH; gi = gi + 1) begin : gen_wr_ready
-            assign ch_wr_cmd_ready[gi] = wr_grant[gi];
+            assign ch_wr_cmd_ready[gi] = wr_grant[gi] & wr_cmd_ready_top & wr_burst_gate;
         end
     endgenerate
 
@@ -964,25 +1006,60 @@ module dma_engine #(
         .din(ch_wr_cmd_size), .sel(wr_grant), .dout(mux_wr_size));
     onehot_mux #(.DATA_W(ID_W),   .N(N_CH)) mux_awid (
         .din(ch_wr_cmd_id),   .sel(wr_grant), .dout(mux_wr_id));
+    reg  [N_CH-1:0] wr_dat_grant_r;
+    wire            wr_wlast_done = WLAST & WVALID & WREADY;
+    wire            aw_accepted   = AWVALID & AWREADY;
 
-    // WR data mux: từ kênh được grant
+    wire [N_CH-1:0] aw_ch_onehot;
+    generate
+        for (gi = 0; gi < N_CH; gi = gi + 1) begin : gen_aw_ch_dec
+            assign aw_ch_onehot[gi] =
+                (AWID[ID_W-1 : ID_W-N_CH_W] == gi[N_CH_W-1:0]);
+        end
+    endgenerate
+
+    always @(posedge clk or negedge ch_rst_n) begin
+        if (!ch_rst_n) begin
+            wr_dat_grant_r <= {N_CH{1'b0}};
+        end else begin
+            if (wr_wlast_done & wr_cmd_fire_top) begin
+                // Pipeline: burst kết thúc, AW mới accepted cùng cycle
+                wr_dat_grant_r <= wr_grant;
+            end else if (wr_wlast_done) begin
+                wr_dat_grant_r <= {N_CH{1'b0}};
+            end else if (~|wr_dat_grant_r & wr_cmd_fire_top) begin
+                wr_dat_grant_r <= wr_grant;
+            end
+            // else: giữ nguyên cho đến WLAST
+        end
+    end
+
+    // Sel: W phase dùng wr_dat_grant_r; giữa các burst dùng wr_grant
+    wire [N_CH-1:0] wr_dat_sel = (|wr_dat_grant_r) ? wr_dat_grant_r : wr_grant;
+    // WR data mux: từ kênh đang active trong W phase
     wire [`AXI_DATA_W-1:0] mux_wr_data;
     onehot_mux #(.DATA_W(`AXI_DATA_W), .N(N_CH)) mux_wdata (
-        .din(ch_wr_dat_data), .sel(wr_grant), .dout(mux_wr_data));
+        .din(ch_wr_dat_data), .sel(wr_dat_sel), .dout(mux_wr_data));
 
-    wire wr_cmd_valid_top = |wr_grant;
+    // Same fix as rd_cmd_valid_top: gate with actual channel valid.
+    wire wr_cmd_valid_top = |(wr_grant & ch_wr_cmd_valid);
     wire wr_cmd_ready_top;
-    wire wr_din_valid = |(ch_wr_dat_valid & wr_grant);
+    wire wr_cmd_valid_gated = wr_cmd_valid_top & wr_burst_gate;
+
+    // wr_cmd_fire_top: forward-declared above, driven here
+    // Dùng wr_cmd_valid_gated thay vì wr_cmd_valid_top
+    assign wr_cmd_fire_top = wr_cmd_valid_gated & wr_cmd_ready_top;
+    wire wr_din_valid = |(ch_wr_dat_valid & wr_dat_sel);
     wire wr_din_ready;
     wire wr_rsp_valid_top;
     wire [ID_W-1:0] wr_rsp_id_top;
     wire [1:0]      wr_rsp_err_top;
     wire            wr_timeout_aw_top, wr_timeout_w_top;
 
-    // wr_dat_ready: chỉ kênh được grant nhận ready
+    // wr_dat_ready: chỉ kênh được sticky grant nhận ready
     generate
         for (gi = 0; gi < N_CH; gi = gi + 1) begin : gen_wr_dat_ready
-            assign ch_wr_dat_ready[gi] = wr_grant[gi] & wr_din_ready;
+            assign ch_wr_dat_ready[gi] = wr_dat_sel[gi] & wr_din_ready;
         end
     endgenerate
 
@@ -994,8 +1071,8 @@ module dma_engine #(
         .TIMEOUT_W (TIMEOUT_W)
     ) u_wr_master (
         .clk         (clk),
-        .rst_n       (rst_n),
-        .cmd_valid   (wr_cmd_valid_top),
+        .rst_n       (ch_rst_n),   // soft reset clears internal state
+        .cmd_valid   (wr_cmd_valid_gated),   // FIX: dùng gated version
         .cmd_ready   (wr_cmd_ready_top),
         .cmd_addr    (mux_wr_addr),
         .cmd_len     (mux_wr_len),
@@ -1012,7 +1089,6 @@ module dma_engine #(
         .AWADDR      (AWADDR),
         .AWLEN       (AWLEN),
         .AWSIZE      (AWSIZE),
-        .AWBURST     (AWBURST),
         .AWID        (AWID),
         .AWVALID     (AWVALID),
         .AWREADY     (AWREADY),
@@ -1028,15 +1104,16 @@ module dma_engine #(
     );
 
     // Route WR rsp về đúng kênh
+    // FIX ID routing: dùng N_CH_W bit CAO của BID
     generate
         for (gi = 0; gi < N_CH; gi = gi + 1) begin : gen_wr_rsp_route
             assign ch_wr_rsp_valid[gi] =
-                wr_rsp_valid_top & (wr_rsp_id_top[N_CH_W-1:0] == gi[N_CH_W-1:0]);
+                wr_rsp_valid_top & (wr_rsp_id_top[ID_W-1:ID_W-N_CH_W] == gi[N_CH_W-1:0]);
             assign ch_wr_rsp_id[gi*ID_W+:ID_W] = wr_rsp_id_top;
             assign ch_wr_rsp_err[gi*2+:2]       = wr_rsp_err_top;
-
-            assign ch_timeout_aw[gi] = wr_timeout_aw_top;
-            assign ch_timeout_w[gi]  = wr_timeout_w_top;
+            assign ch_timeout_aw[gi] = wr_timeout_aw_top &
+                                       (AWID[ID_W-1:ID_W-N_CH_W] == gi[N_CH_W-1:0]);
+            assign ch_timeout_w[gi]  = wr_timeout_w_top & wr_dat_grant_r[gi];
         end
     endgenerate
 
