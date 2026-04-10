@@ -2,14 +2,14 @@
 
 module axi_sdram_controller #(
     // ==========================================
-    // THAM SỐ CẤU HÌNH HỆ THỐNG
+    // THAM S�? CẤU HÌNH HỆ TH�?NG
     // ==========================================
     parameter ADDR_WIDTH            = 32,
     parameter DATA_WIDTH            = 32,
     parameter ID_WIDTH              = 5,
     
     // ==========================================
-    // THAM SỐ CẤU HÌNH SDRAM (Ví dụ cho chip 32-bit data)
+    // THAM S�? CẤU HÌNH SDRAM (Ví dụ cho chip 32-bit data)
     // ==========================================
     parameter SDRAM_ADDR_WIDTH      = 13, // Kích thước Row: 13 bit (8192 rows)
     parameter SDRAM_COL_WIDTH       = 9,  // Kích thước Column: 9 bit (512 cols)
@@ -17,23 +17,24 @@ module axi_sdram_controller #(
     parameter SDRAM_DATA_WIDTH      = 32, 
     
     // ==========================================
-    // THAM SỐ THỜI GIAN SDRAM (Tính theo chu kỳ Clock - VD: Hệ thống chạy 200MHz = 5ns)
+    // THAM S�? THỜI GIAN SDRAM (Tính theo chu kỳ Clock - VD: Hệ thống chạy 100MHz = 10ns)
     // ==========================================
-    parameter INIT_DELAY_CYCLES     = 40000, // 200us thời gian khởi động ban đầu
-    parameter TRP_CYCLES            = 4,     // Thời gian Precharge
-    parameter TRCD_CYCLES           = 4,     // Thời gian trễ từ Activate đến Read/Write
-    parameter TCAS_CYCLES           = 3,     // Độ trễ CAS (CAS Latency)
-    parameter TRFC_CYCLES           = 14,    // Thời gian làm tươi (Auto-Refresh)
-    parameter TWR_CYCLES            = 4,     // Thời gian phục hồi sau khi Ghi (Write Recovery)
-    parameter REFRESH_PERIOD_CYCLES = 1560   // Tần suất làm tươi 
+    parameter INIT_DELAY_CYCLES     = 20000, // 200us th�?i gian khởi động ban đầu
+    parameter TRP_CYCLES            = 2,     // Th�?i gian Precharge
+    parameter TRCD_CYCLES           = 2,     // Th�?i gian trễ từ Activate đến Read/Write
+    parameter TCAS_CYCLES           = 3,     // �?ộ trễ CAS (CAS Latency)
+    parameter TRFC_CYCLES           = 7,     // Th�?i gian làm tươi (Auto-Refresh)
+    parameter TWR_CYCLES            = 2,     // Th�?i gian phục hồi sau khi Ghi (Write Recovery)
+    parameter REFRESH_PERIOD_CYCLES = 780    // Tần suất làm tươi 
 )(
-    input  wire                     clk,
+    input  wire                     clk,      // Xung 100MHz (0 độ) cho Controller
+    input  wire                     clk_phy,  // Xung 100MHz (180 độ) cấp ra chip vật lý
     input  wire                     rst_n,
 
     // ==========================================
     // AXI4 FULL SLAVE INTERFACE
     // ==========================================
-    // Kênh Địa Chỉ Ghi (Write Address Channel)
+    // Kênh �?ịa Chỉ Ghi (Write Address Channel)
     input  wire [ID_WIDTH-1:0]      s_axi_awid,
     input  wire [ADDR_WIDTH-1:0]    s_axi_awaddr,
     input  wire [7:0]               s_axi_awlen,
@@ -55,7 +56,7 @@ module axi_sdram_controller #(
     output reg                      s_axi_bvalid,
     input  wire                     s_axi_bready,
 
-    // Kênh Địa Chỉ Đọc (Read Address Channel)
+    // Kênh �?ịa Chỉ �?�?c (Read Address Channel)
     input  wire [ID_WIDTH-1:0]      s_axi_arid,
     input  wire [ADDR_WIDTH-1:0]    s_axi_araddr,
     input  wire [7:0]               s_axi_arlen,
@@ -64,7 +65,7 @@ module axi_sdram_controller #(
     input  wire                     s_axi_arvalid,
     output reg                      s_axi_arready,
 
-    // Kênh Dữ Liệu Đọc (Read Data Channel)
+    // Kênh Dữ Liệu �?�?c (Read Data Channel)
     output reg  [ID_WIDTH-1:0]      s_axi_rid,
     output reg  [DATA_WIDTH-1:0]    s_axi_rdata,
     output reg  [1:0]               s_axi_rresp,
@@ -73,7 +74,7 @@ module axi_sdram_controller #(
     input  wire                     s_axi_rready,
 
     // ==========================================
-    // GIAO DIỆN VẬT LÝ SDRAM (PHY)
+    // GIAO DIỆN VẬT L�? SDRAM (PHY)
     // ==========================================
     output wire                     sdram_clk,
     output wire                     sdram_cke,
@@ -91,7 +92,7 @@ module axi_sdram_controller #(
 );
 
     // ==========================================
-    // ĐỊNH NGHĨA CÁC LỆNH SDRAM (CS_N, RAS_N, CAS_N, WE_N)
+    // �?ỊNH NGHĨA C�?C LỆNH SDRAM (CS_N, RAS_N, CAS_N, WE_N)
     // ==========================================
     localparam CMD_LOAD_MODE = 4'b0000;
     localparam CMD_REFRESH   = 4'b0001;
@@ -106,7 +107,7 @@ module axi_sdram_controller #(
     assign sdram_cke = 1'b1;
 
     // ==========================================
-    // QUẢN LÝ TÍN HIỆU VÀ TRẠNG THÁI NỘI BỘ
+    // QUẢN L�? T�?N HIỆU VÀ TRẠNG TH�?I NỘI BỘ
     // ==========================================
     // Trạng thái FSM
     localparam ST_INIT_WAIT  = 4'd0, ST_INIT_PRE   = 4'd1, ST_INIT_REF1  = 4'd2;
@@ -123,17 +124,17 @@ module axi_sdram_controller #(
     reg [11:0] refresh_counter;
     reg        refresh_request;
 
-    // Thanh ghi điều khiển SDRAM PHY
+    // Thanh ghi đi�?u khiển SDRAM PHY
     reg [3:0]  cmd_reg;
     reg [SDRAM_BANK_WIDTH-1:0] ba_reg;
     reg [SDRAM_ADDR_WIDTH-1:0] addr_reg;
     reg [(SDRAM_DATA_WIDTH/8)-1:0] dqm_reg;
     
-    // Quản lý Bus Dữ liệu (Đã tách khỏi Tri-state buffer)
+    // Quản lý Bus Dữ liệu (�?ã tách kh�?i Tri-state buffer)
     reg [SDRAM_DATA_WIDTH-1:0] dq_out_reg;
     reg                        dq_oe_reg;
 
-    // Đọc dữ liệu từ cổng input
+    // �?�?c dữ liệu từ cổng input
     wire [SDRAM_DATA_WIDTH-1:0] dq_in_wire = sdram_dq_i;
 
     assign sdram_cs_n  = cmd_reg[3];
@@ -144,12 +145,12 @@ module axi_sdram_controller #(
     assign sdram_addr  = addr_reg;
     assign sdram_dqm   = dqm_reg;
     
-    // Đẩy tín hiệu ra các cổng thay vì dùng inout nội bộ
+    // �?ẩy tín hiệu ra các cổng thay vì dùng inout nội bộ
     assign sdram_dq_o  = dq_out_reg;
     assign sdram_dq_oe = dq_oe_reg;
 
     // ==========================================
-    // QUẢN LÝ HÀNG TRONG CÁC BANK (OPEN-ROW POLICY)
+    // QUẢN L�? HÀNG TRONG C�?C BANK (OPEN-ROW POLICY)
     // ==========================================
     // Lưu trữ thông tin Hàng nào đang được mở ở Bank nào
     reg [SDRAM_ADDR_WIDTH-1:0] open_row_addr [0:3];
@@ -169,11 +170,11 @@ module axi_sdram_controller #(
     wire [SDRAM_ADDR_WIDTH-1:0] target_row  = current_addr[22:10];
     wire [SDRAM_COL_WIDTH-1:0]  target_col  = current_addr[9:2];
 
-    // Cờ kiểm tra Trúng hàng (Row Hit)
+    // C�? kiểm tra Trúng hàng (Row Hit)
     wire row_hit = is_bank_open[target_bank] && (open_row_addr[target_bank] == target_row);
 
     // ==========================================
-    // BỘ ĐẾM LÀM TƯƠI ĐỘC LẬP
+    // BỘ �?ẾM LÀM TƯƠI �?ỘC LẬP
     // ==========================================
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -188,7 +189,7 @@ module axi_sdram_controller #(
                 refresh_request <= 1'b1;
             end else begin
                 refresh_counter <= refresh_counter + 1'b1;
-                // Xóa cờ yêu cầu khi FSM đã chấp nhận Refresh
+                // Xóa c�? yêu cầu khi FSM đã chấp nhận Refresh
                 if (state == ST_REFRESH && delay_timer == 16'd0) begin
                     refresh_request <= 1'b0;
                 end
@@ -197,7 +198,7 @@ module axi_sdram_controller #(
     end
 
     // ==========================================
-    // MÁY TRẠNG THÁI ĐIỀU KHIỂN CHÍNH (MAIN FSM)
+    // M�?Y TRẠNG TH�?I �?IỀU KHIỂN CH�?NH (MAIN FSM)
     // ==========================================
     integer i;
     always @(posedge clk or negedge rst_n) begin
@@ -205,7 +206,7 @@ module axi_sdram_controller #(
             state <= ST_INIT_WAIT;
             delay_timer <= INIT_DELAY_CYCLES;
             
-            // Xóa cờ Open-Row
+            // Xóa c�? Open-Row
             for (i=0; i<4; i=i+1) begin
                 is_bank_open[i] <= 1'b0;
                 open_row_addr[i] <= {SDRAM_ADDR_WIDTH{1'b0}};
@@ -224,7 +225,7 @@ module axi_sdram_controller #(
             dq_oe_reg <= 1'b0;
             dqm_reg   <= {(SDRAM_DATA_WIDTH/8){1'b0}};
 
-            // Xóa cờ handshake AXI khi Master đã nhận
+            // Xóa c�? handshake AXI khi Master đã nhận
             if (s_axi_bvalid && s_axi_bready) s_axi_bvalid <= 1'b0;
             if (s_axi_rvalid && s_axi_rready) begin s_axi_rvalid <= 1'b0; s_axi_rlast <= 1'b0;
             end
@@ -234,7 +235,7 @@ module axi_sdram_controller #(
             end else begin
                 case (state)
                     // -----------------------------------------------------------------
-                    // GIAI ĐOẠN KHỞI TẠO (INITIALIZATION)
+                    // GIAI �?OẠN KHỞI TẠO (INITIALIZATION)
                     // -----------------------------------------------------------------
                     ST_INIT_WAIT: state <= ST_INIT_PRE;
                     
@@ -266,7 +267,7 @@ module axi_sdram_controller #(
                     end
 
                     // -----------------------------------------------------------------
-                    // GIAI ĐOẠN RẢNH VÀ NHẬN LỆNH AXI (IDLE & ARBITRATION)
+                    // GIAI �?OẠN RẢNH VÀ NHẬN LỆNH AXI (IDLE & ARBITRATION)
                     // -----------------------------------------------------------------
                     ST_IDLE: begin
                         if (refresh_request) begin
@@ -293,7 +294,7 @@ module axi_sdram_controller #(
                             // Quyết định hướng đi dựa trên Open-Row Policy
                             if (is_bank_open[s_axi_awaddr[24:23]] && (open_row_addr[s_axi_awaddr[24:23]] == s_axi_awaddr[22:10])) begin
                                 state <= ST_WRITE_BEAT;
-                                // Row Hit -> Đi thẳng vào Ghi
+                                // Row Hit -> �?i thẳng vào Ghi
                             end else if (is_bank_open[s_axi_awaddr[24:23]]) begin
                                 state <= ST_PRECHARGE;
                                 // Row Miss -> Phải đóng hàng cũ
@@ -303,7 +304,7 @@ module axi_sdram_controller #(
                             end
                         end 
                         else if (s_axi_arvalid && !s_axi_arready) begin
-                            // Chấp nhận Lệnh Đọc
+                            // Chấp nhận Lệnh �?�?c
                             s_axi_arready <= 1'b1;
                             current_addr  <= s_axi_araddr;
                             burst_len     <= s_axi_arlen;
@@ -323,7 +324,7 @@ module axi_sdram_controller #(
                     end
 
                     // -----------------------------------------------------------------
-                    // CÁC TRẠNG THÁI ĐIỀU KHIỂN HÀNG (ROW COMMANDS)
+                    // C�?C TRẠNG TH�?I �?IỀU KHIỂN HÀNG (ROW COMMANDS)
                     // -----------------------------------------------------------------
                     ST_PRECHARGE: begin
                         s_axi_awready <= 1'b0;
@@ -367,7 +368,7 @@ module axi_sdram_controller #(
                             s_axi_wready <= 1'b0;
                             cmd_reg <= CMD_WRITE;
                             ba_reg <= target_bank;
-                            // SDRAM A10 = 0 (Bỏ qua Auto-Precharge để giữ hàng mở cho beat tiếp theo)
+                            // SDRAM A10 = 0 (B�? qua Auto-Precharge để giữ hàng mở cho beat tiếp theo)
                             addr_reg <= {3'b000, 1'b0, 1'b0, target_col};
                             
                             dq_out_reg <= s_axi_wdata;
@@ -380,7 +381,7 @@ module axi_sdram_controller #(
                     end
 
                     ST_WRITE_WAIT: begin
-                        // Đợi phục hồi ghi (Write Recovery) để tuân thủ thời gian an toàn
+                        // �?ợi phục hồi ghi (Write Recovery) để tuân thủ th�?i gian an toàn
                         if (burst_count == burst_len) begin
                             // Kết thúc toàn bộ Burst
                             s_axi_bvalid <= 1'b1;
@@ -390,7 +391,7 @@ module axi_sdram_controller #(
                             // Tiếp tục beat tiếp theo trong Burst
                             burst_count <= burst_count + 1'b1;
                             current_addr <= current_addr + (1 << burst_size);
-                            // Kiểm tra xem beat tiếp theo có vượt ra khỏi biên giới Hàng (Row Boundary) không
+                            // Kiểm tra xem beat tiếp theo có vượt ra kh�?i biên giới Hàng (Row Boundary) không
                             // Nếu vượt (tràn cột), bắt buộc phải quay lại Precharge.
                             // Nếu không, tiếp tục Ghi.
                             if ((current_addr[9:2] + 1'b1) >= (1 << SDRAM_COL_WIDTH)) begin
@@ -402,7 +403,7 @@ module axi_sdram_controller #(
                     end
 
                     // -----------------------------------------------------------------
-                    // THỰC THI ĐỌC DỮ LIỆU (READ BURST)
+                    // THỰC THI �?ỌC DỮ LIỆU (READ BURST)
                     // -----------------------------------------------------------------
                     ST_READ_BEAT: begin
                         s_axi_arready <= 1'b0;
@@ -415,7 +416,7 @@ module axi_sdram_controller #(
                     end
 
                     ST_READ_WAIT: begin
-                        // Chờ độ trễ CAS (Data Latency)
+                        // Ch�? độ trễ CAS (Data Latency)
                         state <= ST_READ_SEND;
                     end
 
@@ -442,14 +443,14 @@ module axi_sdram_controller #(
                                     // Vượt biên giới Hàng
                                 end else begin
                                     state <= ST_READ_BEAT;
-                                    // Đọc beat tiếp theo
+                                    // �?�?c beat tiếp theo
                                 end
                             end
                         end
                     end
 
                     // -----------------------------------------------------------------
-                    // LÀM TƯƠI ĐỊNH KỲ (AUTO REFRESH)
+                    // LÀM TƯƠI �?ỊNH KỲ (AUTO REFRESH)
                     // -----------------------------------------------------------------
                     ST_REFRESH: begin
                         cmd_reg <= CMD_REFRESH;

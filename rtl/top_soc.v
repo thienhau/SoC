@@ -5,7 +5,8 @@ module top_soc (
     input  wire        clk_core,   // 400 MHz
     input  wire        clk_axi,    // 200 MHz
     input  wire        clk_apb,    // 100 MHz
-    input  wire        clk_sdram_ext,  // 200 MHz (LỆCH PHA - cấp riêng cho chip RAM ngoài)
+    input  wire        clk_sdram_ctrl, // 100 MHz (0 độ lệch pha)
+    input  wire        clk_sdram_ext,  // 100 MHz (LỆCH PHA - cấp riêng cho chip RAM ngoài)
     input  wire        uart_clk,   
     input  wire        spi_clk,    
     input  wire        i2c_clk,    
@@ -64,10 +65,12 @@ module top_soc (
     wire reset_core_n_sync;
     wire reset_axi_n_sync;
     wire reset_apb_n_sync;
+    wire reset_sdram_n_sync;
     
     reset_sync u_core_rst_sync (.clk(clk_core), .rst_in_n(reset_sys_n_raw), .rst_out_n(reset_core_n_sync));
     reset_sync u_axi_rst_sync  (.clk(clk_axi),  .rst_in_n(reset_sys_n_raw), .rst_out_n(reset_axi_n_sync));
     reset_sync u_apb_rst_sync  (.clk(clk_apb),  .rst_in_n(reset_sys_n_raw), .rst_out_n(reset_apb_n_sync));
+    reset_sync u_sdram_rst_sync(.clk(clk_sdram_ctrl), .rst_in_n(reset_sys_n_raw), .rst_out_n(reset_sdram_n_sync));
 
     // =========================================================================
     // 2. CLOCK GATING NETWORK (ĐÃ PHỤC HỒI 100%)
@@ -539,14 +542,14 @@ module top_soc (
     // =========================================================================
     // 8. KHỞI TẠO CÁC AXI SLAVES
     // =========================================================================
-    axi_rom u_axi_rom (
+    axi_rom #(.ID_WIDTH (7)) u_axi_rom (
         .clk(clk_axi), .rst_n(reset_axi_n_sync),
         .s_axi_arid(s0_arid), .s_axi_araddr(s0_araddr), .s_axi_arlen(s0_arlen), .s_axi_arsize(s0_arsize), .s_axi_arburst(s0_arburst), .s_axi_arvalid(s0_arvalid), .s_axi_arready(s0_arready),
         .s_axi_rid(s0_rid), .s_axi_rdata(s0_rdata), .s_axi_rresp(s0_rresp), .s_axi_rlast(s0_rlast), .s_axi_rvalid(s0_rvalid), .s_axi_rready(s0_rready)
     );
     assign s0_awready = 0; assign s0_wready = 0; assign s0_bvalid = 0;
 
-    axi_ram u_axi_ram (
+    axi_ram #(.ID_WIDTH (7)) u_axi_ram (
         .clk(clk_axi), .rst_n(reset_axi_n_sync),
         .s_axi_awid(s1_awid), .s_axi_awaddr(s1_awaddr), .s_axi_awlen(s1_awlen), .s_axi_awsize(s1_awsize), .s_axi_awburst(s1_awburst), .s_axi_awvalid(s1_awvalid), .s_axi_awready(s1_awready),
         .s_axi_wdata(s1_wdata), .s_axi_wstrb(s1_wstrb), .s_axi_wlast(s1_wlast), .s_axi_wvalid(s1_wvalid), .s_axi_wready(s1_wready),
@@ -572,7 +575,7 @@ module top_soc (
     assign flash_io2_i = flash_io[2];
     assign flash_io3_i = flash_io[3];
 
-    axi_spi_flash u_axi_flash (
+    axi_spi_flash #(.ID_WIDTH (7)) u_axi_flash (
         .clk(clk_axi), .rst_n(reset_axi_n_sync),
         
         // Giao diện Quad SPI vật lý
@@ -604,23 +607,76 @@ module top_soc (
 
     wire [15:0] sdram_dq_i_sync;
     
+    // Đồng bộ tín hiệu DQ về clk_sdram_ctrl thay vì clk_axi
     cdc_sync_vector #(.WIDTH(16), .STAGES(2)) u_sync_sdram_dq (
-        .clk_dst   (clk_axi),            // Đồng bộ theo nhịp của AXI Controller
-        .rst_dst_n (reset_axi_n_sync),
-        .d_in      (sdram_dq_i),         // Dữ liệu thô từ ngoài board đi vào
-        .q_out     (sdram_dq_i_sync)     // Dữ liệu đã sạch, an toàn cho Controller
+        .clk_dst   (clk_sdram_ctrl),     
+        .rst_dst_n (reset_sdram_n_sync),
+        .d_in      (sdram_dq_i),         
+        .q_out     (sdram_dq_i_sync)     
     );
 
-    axi_sdram_controller u_axi_sdram (
-        .clk(clk_axi), .rst_n(reset_axi_n_sync),
-        .sdram_clk(), .sdram_cke(sdram_cke), .sdram_cs_n(sdram_cs_n), .sdram_ras_n(sdram_ras_n),
-        .sdram_cas_n(sdram_cas_n), .sdram_we_n(sdram_we_n), .sdram_ba(sdram_ba), .sdram_addr(sdram_addr),
-        .sdram_dqm(sdram_dqm), .sdram_dq_i(sdram_dq_i_sync), .sdram_dq_o(sdram_dq_o), .sdram_dq_oe(sdram_dq_oe),
-        .s_axi_awid(s3_awid), .s_axi_awaddr(s3_awaddr), .s_axi_awlen(s3_awlen), .s_axi_awsize(s3_awsize), .s_axi_awburst(s3_awburst), .s_axi_awvalid(s3_awvalid), .s_axi_awready(s3_awready),
+    // Dây tín hiệu AXI sau khi qua cầu CDC sang miền 100MHz
+    wire [6:0]  sdram_axi_awid;   wire [31:0] sdram_axi_awaddr; wire [7:0] sdram_axi_awlen;
+    wire [2:0]  sdram_axi_awsize; wire [1:0]  sdram_axi_awburst;wire [2:0] sdram_axi_awprot;
+    wire        sdram_axi_awvalid;wire        sdram_axi_awready;
+    wire [31:0] sdram_axi_wdata;  wire [3:0]  sdram_axi_wstrb;  wire       sdram_axi_wlast;
+    wire        sdram_axi_wvalid; wire        sdram_axi_wready;
+    wire [6:0]  sdram_axi_bid;    wire [1:0]  sdram_axi_bresp;  wire       sdram_axi_bvalid; wire sdram_axi_bready;
+    wire [6:0]  sdram_axi_arid;   wire [31:0] sdram_axi_araddr; wire [7:0] sdram_axi_arlen;
+    wire [2:0]  sdram_axi_arsize; wire [1:0]  sdram_axi_arburst;wire [2:0] sdram_axi_arprot;
+    wire        sdram_axi_arvalid;wire        sdram_axi_arready;
+    wire [6:0]  sdram_axi_rid;    wire [31:0] sdram_axi_rdata;  wire [1:0] sdram_axi_rresp;
+    wire        sdram_axi_rlast;  wire        sdram_axi_rvalid; wire       sdram_axi_rready;
+
+    // CẦU CDC CHO SDRAM: Chuyển s3_* (200MHz) sang sdram_axi_* (100MHz)
+    axi_async_bridge #(
+        .ADDR_WIDTH(32),
+        .DATA_WIDTH(32),
+        .ID_WIDTH(7) // Kênh Slave trong Interconnect của bạn dùng ID 7 bit
+    ) u_axi_cdc_sdram (
+        .s_clk(clk_axi), .s_rst_n(reset_axi_n_sync),
+        .s_axi_awid(s3_awid), .s_axi_awaddr(s3_awaddr), .s_axi_awlen(s3_awlen), .s_axi_awsize(s3_awsize), .s_axi_awburst(s3_awburst), .s_axi_awprot(s3_awprot), .s_axi_awvalid(s3_awvalid), .s_axi_awready(s3_awready),
         .s_axi_wdata(s3_wdata), .s_axi_wstrb(s3_wstrb), .s_axi_wlast(s3_wlast), .s_axi_wvalid(s3_wvalid), .s_axi_wready(s3_wready),
         .s_axi_bid(s3_bid), .s_axi_bresp(s3_bresp), .s_axi_bvalid(s3_bvalid), .s_axi_bready(s3_bready),
-        .s_axi_arid(s3_arid), .s_axi_araddr(s3_araddr), .s_axi_arlen(s3_arlen), .s_axi_arsize(s3_arsize), .s_axi_arburst(s3_arburst), .s_axi_arvalid(s3_arvalid), .s_axi_arready(s3_arready),
-        .s_axi_rid(s3_rid), .s_axi_rdata(s3_rdata), .s_axi_rresp(s3_rresp), .s_axi_rlast(s3_rlast), .s_axi_rvalid(s3_rvalid), .s_axi_rready(s3_rready)
+        .s_axi_arid(s3_arid), .s_axi_araddr(s3_araddr), .s_axi_arlen(s3_arlen), .s_axi_arsize(s3_arsize), .s_axi_arburst(s3_arburst), .s_axi_arprot(s3_arprot), .s_axi_arvalid(s3_arvalid), .s_axi_arready(s3_arready),
+        .s_axi_rid(s3_rid), .s_axi_rdata(s3_rdata), .s_axi_rresp(s3_rresp), .s_axi_rlast(s3_rlast), .s_axi_rvalid(s3_rvalid), .s_axi_rready(s3_rready),
+
+        .m_clk(clk_sdram_ctrl), .m_rst_n(reset_sdram_n_sync),
+        .m_axi_awid(sdram_axi_awid), .m_axi_awaddr(sdram_axi_awaddr), .m_axi_awlen(sdram_axi_awlen), .m_axi_awsize(sdram_axi_awsize), .m_axi_awburst(sdram_axi_awburst), .m_axi_awprot(sdram_axi_awprot), .m_axi_awvalid(sdram_axi_awvalid), .m_axi_awready(sdram_axi_awready),
+        .m_axi_wdata(sdram_axi_wdata), .m_axi_wstrb(sdram_axi_wstrb), .m_axi_wlast(sdram_axi_wlast), .m_axi_wvalid(sdram_axi_wvalid), .m_axi_wready(sdram_axi_wready),
+        .m_axi_bid(sdram_axi_bid), .m_axi_bresp(sdram_axi_bresp), .m_axi_bvalid(sdram_axi_bvalid), .m_axi_bready(sdram_axi_bready),
+        .m_axi_arid(sdram_axi_arid), .m_axi_araddr(sdram_axi_araddr), .m_axi_arlen(sdram_axi_arlen), .m_axi_arsize(sdram_axi_arsize), .m_axi_arburst(sdram_axi_arburst), .m_axi_arprot(sdram_axi_arprot), .m_axi_arvalid(sdram_axi_arvalid), .m_axi_arready(sdram_axi_arready),
+        .m_axi_rid(sdram_axi_rid), .m_axi_rdata(sdram_axi_rdata), .m_axi_rresp(sdram_axi_rresp), .m_axi_rlast(sdram_axi_rlast), .m_axi_rvalid(sdram_axi_rvalid), .m_axi_rready(sdram_axi_rready)
+    );
+
+    // SDRAM CONTROLLER: Ép tham số 100MHz và nhận dây từ CDC
+    axi_sdram_controller #(
+        .ID_WIDTH (7)
+    ) u_axi_sdram (
+        .clk           (clk_sdram_ctrl),     // 100MHz nội bộ
+        .clk_phy       (clk_sdram_phy),      // 100MHz lệch pha 180 độ
+        .rst_n         (reset_sdram_n_sync),
+        
+        // Giao tiếp chip RAM (sdram_clk xuất trực tiếp ra port ngoài ở đây)
+        .sdram_clk     (), 
+        .sdram_cke     (sdram_cke), 
+        .sdram_cs_n    (sdram_cs_n), 
+        .sdram_ras_n   (sdram_ras_n),
+        .sdram_cas_n   (sdram_cas_n), 
+        .sdram_we_n    (sdram_we_n), 
+        .sdram_ba      (sdram_ba), 
+        .sdram_addr    (sdram_addr),
+        .sdram_dqm     (sdram_dqm), 
+        .sdram_dq_i    (sdram_dq_i_sync), 
+        .sdram_dq_o    (sdram_dq_o), 
+        .sdram_dq_oe   (sdram_dq_oe),
+        
+        // Nhận tín hiệu AXI 100MHz từ cầu CDC
+        .s_axi_awid    (sdram_axi_awid), .s_axi_awaddr(sdram_axi_awaddr), .s_axi_awlen(sdram_axi_awlen), .s_axi_awsize(sdram_axi_awsize), .s_axi_awburst(sdram_axi_awburst), .s_axi_awvalid(sdram_axi_awvalid), .s_axi_awready(sdram_axi_awready),
+        .s_axi_wdata   (sdram_axi_wdata), .s_axi_wstrb(sdram_axi_wstrb), .s_axi_wlast(sdram_axi_wlast), .s_axi_wvalid(sdram_axi_wvalid), .s_axi_wready(sdram_axi_wready),
+        .s_axi_bid     (sdram_axi_bid), .s_axi_bresp(sdram_axi_bresp), .s_axi_bvalid(sdram_axi_bvalid), .s_axi_bready(sdram_axi_bready),
+        .s_axi_arid    (sdram_axi_arid), .s_axi_araddr(sdram_axi_araddr), .s_axi_arlen(sdram_axi_arlen), .s_axi_arsize(sdram_axi_arsize), .s_axi_arburst(sdram_axi_arburst), .s_axi_arvalid(sdram_axi_arvalid), .s_axi_arready(sdram_axi_arready),
+        .s_axi_rid     (sdram_axi_rid), .s_axi_rdata(sdram_axi_rdata), .s_axi_rresp(sdram_axi_rresp), .s_axi_rlast(sdram_axi_rlast), .s_axi_rvalid(sdram_axi_rvalid), .s_axi_rready(sdram_axi_rready)
     );
 
     wire [31:0] apb_paddr, apb_pwdata, apb_prdata; wire [3:0] apb_pstrb; wire [2:0] apb_pprot;
