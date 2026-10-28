@@ -107,16 +107,17 @@ module top_soc (
     cdc_sync_bit u_sync_mtip (.clk_dst(clk_cpu), .rst_dst_n(reset_core_n_sync), .d_in(cpu_mtip_raw[0]),.q_out(cpu_mtip_sync));
     cdc_sync_bit u_sync_msip (.clk_dst(clk_cpu), .rst_dst_n(reset_core_n_sync), .d_in(cpu_msip_raw[0]),.q_out(cpu_msip_sync));
 
-    wire uart_irq_raw, gpio_irq_raw, spi_irq_raw, i2c_irq_raw, wdt_irq_raw;
+    wire uart_irq_raw, gpio_irq_raw, spi_irq_raw, i2c_irq_raw, wdt_irq_raw, ascore_irq_raw;
     wire uart_dma_tx_raw, uart_dma_rx_raw, spi_dma_tx_raw, spi_dma_rx_raw, i2c_dma_tx_raw, i2c_dma_rx_raw;
 
     // Đồng bộ Ngắt ngoại vi về clk_apb (cho PLIC)
-    wire uart_irq, gpio_irq, spi_irq, i2c_irq, wdt_irq;
+    wire uart_irq, gpio_irq, spi_irq, i2c_irq, wdt_irq, ascon_irq;
     cdc_sync_bit u_sync_uart_irq (.clk_dst(clk_apb), .rst_dst_n(reset_apb_n_sync), .d_in(uart_irq_raw), .q_out(uart_irq));
     cdc_sync_bit u_sync_gpio_irq (.clk_dst(clk_apb), .rst_dst_n(reset_apb_n_sync), .d_in(gpio_irq_raw), .q_out(gpio_irq));
     cdc_sync_bit u_sync_spi_irq  (.clk_dst(clk_apb), .rst_dst_n(reset_apb_n_sync), .d_in(spi_irq_raw),  .q_out(spi_irq));
     cdc_sync_bit u_sync_i2c_irq  (.clk_dst(clk_apb), .rst_dst_n(reset_apb_n_sync), .d_in(i2c_irq_raw),  .q_out(i2c_irq));
     cdc_sync_bit u_sync_wdt_irq  (.clk_dst(clk_apb), .rst_dst_n(reset_apb_n_sync), .d_in(wdt_irq_raw),  .q_out(wdt_irq));
+    cdc_sync_bit u_sync_ascon_irq (.clk_dst(clk_apb), .rst_dst_n(reset_apb_n_sync), .d_in(ascon_irq_raw), .q_out(ascon_irq));
 
     // Đồng bộ DMA Req về clk_axi (cho DMA Controller)
     wire uart_dma_tx, uart_dma_rx, spi_dma_tx, spi_dma_rx, i2c_dma_tx, i2c_dma_rx;
@@ -133,7 +134,7 @@ module top_soc (
 
     wire [31:1] periph_dma_req = { 25'd0, i2c_dma_rx, i2c_dma_tx, spi_dma_rx, spi_dma_tx, uart_dma_rx, uart_dma_tx };
     wire [31:1] periph_dma_clr;
-    wire [31:0] plic_irq_src = { 25'd0, dma_irq_sync, wdt_irq, i2c_irq, spi_irq, gpio_irq, uart_irq, 1'b0 };
+    wire [31:0] plic_irq_src = { 24'd0, ascon_irq, dma_irq_sync, wdt_irq, i2c_irq, spi_irq, gpio_irq, uart_irq, 1'b0 };
 
     wire [31:0] syscon_reset_vector;
     wire        wfi_sleep_state;
@@ -381,7 +382,7 @@ module top_soc (
     // =========================================================================
     // 6. INSTANTIATE CÁC MASTER MODULES
     // =========================================================================    
-// --- KHAI BÁO DÂY LÕI (CHẠY clk_cpu 400MHz) ---
+    // --- KHAI BÁO DÂY LÕI (CHẠY clk_cpu 400MHz) ---
     wire [4:0]  ic_arid;    wire [31:0] ic_araddr;  wire [7:0]  ic_arlen;   
     wire [2:0]  ic_arsize;  wire [1:0]  ic_arburst; wire [2:0]  ic_arprot;  
     wire        ic_arvalid; wire        ic_arready; wire [4:0]  ic_rid;     
@@ -754,14 +755,14 @@ module top_soc (
     // =========================================================================
     // 9. APB INTERCONNECT VÀ CÁC NGOẠI VI
     // =========================================================================
-    wire [31:0] paddr_0, paddr_1, paddr_2, paddr_3, paddr_4, paddr_5, paddr_6, paddr_7, paddr_8, paddr_9;
-    wire [31:0] pwdata_0, pwdata_1, pwdata_2, pwdata_3, pwdata_4, pwdata_5, pwdata_6, pwdata_7, pwdata_8, pwdata_9;
-    wire [31:0] prdata_0, prdata_1, prdata_2, prdata_3, prdata_4, prdata_5, prdata_6, prdata_7, prdata_8, prdata_9;
-    wire psel_0, psel_1, psel_2, psel_3, psel_4, psel_5, psel_6, psel_7, psel_8, psel_9;
-    wire penable_0, penable_1, penable_2, penable_3, penable_4, penable_5, penable_6, penable_7, penable_8, penable_9;
-    wire pwrite_0, pwrite_1, pwrite_2, pwrite_3, pwrite_4, pwrite_5, pwrite_6, pwrite_7, pwrite_8, pwrite_9;
-    wire pready_0, pready_1, pready_2, pready_3, pready_4, pready_5, pready_6, pready_7, pready_8, pready_9;
-    wire pslverr_0, pslverr_1, pslverr_2, pslverr_3, pslverr_4, pslverr_5, pslverr_6, pslverr_7, pslverr_8, pslverr_9;
+    wire [31:0] paddr_0, paddr_1, paddr_2, paddr_3, paddr_4, paddr_5, paddr_6, paddr_7, paddr_8, paddr_9, paddr_10;
+    wire [31:0] pwdata_0, pwdata_1, pwdata_2, pwdata_3, pwdata_4, pwdata_5, pwdata_6, pwdata_7, pwdata_8, pwdata_9, pwdata_10;
+    wire [31:0] prdata_0, prdata_1, prdata_2, prdata_3, prdata_4, prdata_5, prdata_6, prdata_7, prdata_8, prdata_9, prdata_10;
+    wire psel_0, psel_1, psel_2, psel_3, psel_4, psel_5, psel_6, psel_7, psel_8, psel_9, psel_10;
+    wire penable_0, penable_1, penable_2, penable_3, penable_4, penable_5, penable_6, penable_7, penable_8, penable_9, penable_10;
+    wire pwrite_0, pwrite_1, pwrite_2, pwrite_3, pwrite_4, pwrite_5, pwrite_6, pwrite_7, pwrite_8, pwrite_9, pwrite_10;
+    wire pready_0, pready_1, pready_2, pready_3, pready_4, pready_5, pready_6, pready_7, pready_8, pready_9, pready_10;
+    wire pslverr_0, pslverr_1, pslverr_2, pslverr_3, pslverr_4, pslverr_5, pslverr_6, pslverr_7, pslverr_8, pslverr_9, pslverr_10;
 
     apb_interconnect u_apb_interconnect (
         .clk(clk_apb), .rst_n(reset_apb_n_sync),
@@ -775,7 +776,8 @@ module top_soc (
         .s6_paddr(paddr_6), .s6_psel(psel_6), .s6_penable(penable_6), .s6_pwrite(pwrite_6), .s6_pwdata(pwdata_6), .s6_pready(pready_6), .s6_prdata(prdata_6), .s6_pslverr(pslverr_6),
         .s7_paddr(paddr_7), .s7_psel(psel_7), .s7_penable(penable_7), .s7_pwrite(pwrite_7), .s7_pwdata(pwdata_7), .s7_pready(pready_7), .s7_prdata(prdata_7), .s7_pslverr(pslverr_7),
         .s8_paddr(paddr_8), .s8_psel(psel_8), .s8_penable(penable_8), .s8_pwrite(pwrite_8), .s8_pwdata(pwdata_8), .s8_pready(pready_8), .s8_prdata(prdata_8), .s8_pslverr(pslverr_8),
-        .s9_paddr(paddr_9), .s9_psel(psel_9), .s9_penable(penable_9), .s9_pwrite(pwrite_9), .s9_pwdata(pwdata_9), .s9_pready(pready_9), .s9_prdata(prdata_9), .s9_pslverr(pslverr_9)
+        .s9_paddr(paddr_9), .s9_psel(psel_9), .s9_penable(penable_9), .s9_pwrite(pwrite_9), .s9_pwdata(pwdata_9), .s9_pready(pready_9), .s9_prdata(prdata_9), .s9_pslverr(pslverr_9),
+        .s10_paddr(paddr_10), .s10_psel(psel_10), .s10_penable(penable_10), .s10_pwrite(pwrite_10), .s10_pwdata(pwdata_10), .s10_pready(pready_10), .s10_prdata(prdata_10), .s10_pslverr(pslverr_10)
     );
 
     // S0: UART
@@ -857,6 +859,24 @@ module top_soc (
         .clk_i(clk_apb), .rst_ni(reset_apb_n_sync),
         .paddr(paddr_8), .psel(psel_8), .penable(penable_8), .pwrite(pwrite_8), .pwdata(pwdata_8), .pready(pready_8), .prdata(prdata_8), .pslverr(pslverr_8),
         .irq_src_i(plic_irq_src), .irq_o(cpu_meip_raw)
+    );
+
+    // S10: ASCON Crypto & TRNG IP
+    apb_ascon_top #(
+        .USE_MASKED_CORE(0), // 0: Lõi Unmasked (Nhỏ gọn), 1: Lõi Masked (Chống DPA)
+        .USE_HYBRID_TRNG(1)  // 1: Dùng Hybrid PRNG (Tốc độ cao)
+    ) u_apb_ascon (
+        .PCLK      (clk_apb),          // Chạy chung xung nhịp APB (100MHz)
+        .PRESETn   (reset_apb_n_sync),
+        .PSEL      (psel_10),
+        .PENABLE   (penable_10),
+        .PWRITE    (pwrite_10),
+        .PADDR     (paddr_10[11:0]),   // Cắt lấy 12-bit offset (4KB)
+        .PWDATA    (pwdata_10),
+        .PRDATA    (prdata_10),
+        .PREADY    (pready_10),
+        .PSLVERR   (pslverr_10),
+        .interrupt (ascon_irq_raw)     // Xuất ngắt thô đi vào khối CDC ở Bước 1
     );
 
     // =========================================================================
