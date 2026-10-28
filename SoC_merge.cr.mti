@@ -1,0 +1,594 @@
+C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/cache/icache.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/cache/icache.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module generic_tag_ram
+-- Compiling module generic_data_ram
+-- Compiling module instruction_cache
+
+Top level modules:
+	instruction_cache
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/baudrate_gen.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/baudrate_gen.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module baud_gen
+
+Top level modules:
+	baud_gen
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb_uart
+
+Top level modules:
+	apb_uart
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/skid_Buffer.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/skid_Buffer.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module skid_buffer
+
+Top level modules:
+	skid_buffer
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/axi4_master_rd.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/axi4_master_rd.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi4_master_rd
+
+Top level modules:
+	axi4_master_rd
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/forwarding_unit.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/forwarding_unit.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module forwarding_unit
+
+Top level modules:
+	forwarding_unit
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/dma_soc_wrap.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/dma_soc_wrap.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module dma_soc_wrap
+
+Top level modules:
+	dma_soc_wrap
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/common/cdc_bridge.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/common/cdc_bridge.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module native_cdc_bridge
+-- Compiling module axi4_read_cdc
+
+Top level modules:
+	native_cdc_bridge
+	axi4_read_cdc
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/dma_channel.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/dma_channel.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module dma_channel
+
+Top level modules:
+	dma_channel
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/debug/dtm_axi_master.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/debug/dtm_axi_master.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module dtm_axi_master
+
+Top level modules:
+	dtm_axi_master
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/axi_ram.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/axi_ram.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi_ram_ip
+
+Top level modules:
+	axi_ram_ip
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/dma_engine.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/dma_engine.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module dma_engine
+
+Top level modules:
+	dma_engine
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/sync_cell.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/sync_cell.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module sync_cell
+
+Top level modules:
+	sync_cell
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/axi_dispatcher_channel.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/axi_dispatcher_channel.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module dsp_Ax_channel
+-- Compiling module dsp_R_channel
+-- Compiling module dsp_W_channel
+-- Compiling module dsp_B_channel
+-- Compiling module dsp_read_channel
+-- Compiling module dsp_write_channel
+-- Compiling module ai_dispatcher
+
+Top level modules:
+	ai_dispatcher
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/sync_fifo.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/sync_fifo.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module sync_fifo
+
+Top level modules:
+	sync_fifo
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/multiplier_divider_unit.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/multiplier_divider_unit.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module multiplier
+-- Compiling module divider
+
+Top level modules:
+	multiplier
+	divider
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/uart_top.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/uart_top.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module uart_top
+
+Top level modules:
+	uart_top
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/control_unit.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/control_unit.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module main_control_unit
+-- Compiling module alu_control_unit
+
+Top level modules:
+	main_control_unit
+	alu_control_unit
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/plic.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/plic.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi_plic
+
+Top level modules:
+	axi_plic
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_syscon.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_syscon.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb_syscon
+
+Top level modules:
+	apb_syscon
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/debug/rv_debug_module_sba.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/debug/rv_debug_module_sba.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module rv_debug_module_sba
+
+Top level modules:
+	rv_debug_module_sba
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_gateway.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_gateway.sv
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module rv_plic_gateway
+
+Top level modules:
+	rv_plic_gateway
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/axi_ctrl.v {0 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/axi_ctrl.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi4lite_ctrl
+** Error: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/axi_ctrl.v(143): (vlog-2730) Undefined variable: 'araddr_hold'.
+** Error (suppressible): C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/axi_ctrl.v(301): (vlog-2388) 'araddr_hold' already declared in this scope (axi4lite_ctrl).
+
+} {4.0 5.0} {}} D:/ModelSim/Project/SoC_merge/rtl/peripheral/apb_ascon/ascon_core.v {1 {vlog -work work -vopt -stats=none D:/ModelSim/Project/SoC_merge/rtl/peripheral/apb_ascon/ascon_core.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module ascon_core
+
+Top level modules:
+	ascon_core
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/top_pkg.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/top_pkg.sv
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling package top_pkg
+
+Top level modules:
+	--none--
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_to_apb_bridge.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_to_apb_bridge.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi4_to_apb4_bridge_std
+
+Top level modules:
+	axi4_to_apb4_bridge_std
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv {2 {vlog -work work -vopt -sv -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module rv_plic_target
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(47): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(48): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(49): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(51): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(51): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(53): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(54): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(55): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(88): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(88): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(90): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(91): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(92): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(94): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(95): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(96): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(101): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(101): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(102): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(102): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(103): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(104): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(105): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(106): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(107): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(108): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(111): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(112): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(113): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(115): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(116): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(117): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(119): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(120): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(121): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(123): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(124): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(125): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(127): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(128): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(129): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(132): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(133): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(134): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(139): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(140): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(169): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(171): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(171): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(172): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(173): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(173): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(175): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_target.sv(178): (vlog-2583) [SVCHK] - Some checking for conflicts with always_comb and always_latch variables not yet supported. Run vopt to provide additional design-level checks.
+
+Top level modules:
+	rv_plic_target
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/clint.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/clint.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi_clint
+
+Top level modules:
+	axi_clint
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/dma.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/dma.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi_dma
+
+Top level modules:
+	axi_dma
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_watchdog.v {0 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_watchdog.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb_watchdog
+** Error: (vlog-13069) C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_watchdog.v(55): near "G1": syntax error, unexpected IDENTIFIER.
+
+} {4.0 5.0} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/sim/jtag_bridge.cpp {1 {sccom -work work -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/sim/jtag_bridge.cpp
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/axi_slave_arbitration.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/axi_slave_arbitration.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module arbiter_iwrr_1cycle
+-- Compiling module sa_Ax_channel
+-- Compiling module sa_R_channel
+-- Compiling module sa_W_channel
+-- Compiling module sa_B_channel
+-- Compiling module ai_slave_arbitration
+
+Top level modules:
+	ai_slave_arbitration
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/onehot_decoder.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/onehot_decoder.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module onehot_decoder
+
+Top level modules:
+	onehot_decoder
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/tlul_pkg.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/tlul_pkg.sv
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling package tlul_pkg
+-- Importing package top_pkg
+
+Top level modules:
+	--none--
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/onehot_encoder.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/onehot_encoder.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module onehot_encoder
+
+Top level modules:
+	onehot_encoder
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/dma_define.vh {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/dma_define.vh
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_spi.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_spi.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb_spi
+
+Top level modules:
+	apb_spi
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/axi_interconnect.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/axi_interconnect.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi_interconnect
+
+Top level modules:
+	axi_interconnect
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/axi_sdram_controller.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/axi_sdram_controller.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi4_sdram_controller_ip
+
+Top level modules:
+	axi4_sdram_controller_ip
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/cache/dcache.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/cache/dcache.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module data_cache
+
+Top level modules:
+	data_cache
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_i2c.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_i2c.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb_i2c
+
+Top level modules:
+	apb_i2c
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/common/skid_buffer.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/common/skid_buffer.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module skid_buffer
+
+Top level modules:
+	skid_buffer
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/sim/tb_jtag.sv {2 {vlog -work work -vopt -sv -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/sim/tb_jtag.sv
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module mock_spi_flash
+** Warning: C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/sim/tb_jtag.sv(78): (vlog-13233) Design unit "tb_jtag_sv_unit" already exists and will be overwritten. Overwriting SystemVerilog $unit with different source files.
+-- Compiling package tb_jtag_sv_unit
+-- Compiling module tb_jtag
+
+Top level modules:
+	tb_jtag
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/sb_fifo.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/sb_fifo.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module fifo
+
+Top level modules:
+	fifo
+
+} {} {}} D:/ModelSim/Project/SoC_merge/rtl/interrupt/DMA/dma_define.vh {1 {vlog -work work -vopt -stats=none D:/ModelSim/Project/SoC_merge/rtl/interrupt/DMA/dma_define.vh
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/axi_rom.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/axi_rom.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi_rom_ip
+
+Top level modules:
+	axi_rom_ip
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/UART_TX.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/UART_TX.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module uart_tx
+
+Top level modules:
+	uart_tx
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/uart_ctrl.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/uart_ctrl.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module uart_ctrl
+
+Top level modules:
+	uart_ctrl
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/pipeline_stage/pipeline_stage.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/pipeline_stage/pipeline_stage.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module instruction_fetch
+-- Compiling module instruction_decode
+-- Compiling module execute
+-- Compiling module memory_access
+-- Compiling module write_back
+
+Top level modules:
+	instruction_fetch
+	instruction_decode
+	execute
+	memory_access
+	write_back
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/axi_spi_flash.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/memory/axi_spi_flash.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi4_spi_flash_xip_ip
+
+Top level modules:
+	axi4_spi_flash_xip_ip
+
+} {} {}} D:/ModelSim/Project/SoC_merge/rtl/peripheral/apb_ascon/trng_128b.v {1 {vlog -work work -vopt -stats=none D:/ModelSim/Project/SoC_merge/rtl/peripheral/apb_ascon/trng_128b.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module trng_128b
+-- Compiling module RingGenerator
+-- Compiling module RingOscillator
+-- Compiling module xilinx_nand
+-- Compiling module xilinx_not
+-- Compiling module xilinx_primitive_nand
+-- Compiling module xilinx_primitive_not
+
+Top level modules:
+	trng_128b
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/common/clock_gate.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/common/clock_gate.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module clock_gate
+
+Top level modules:
+	clock_gate
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_accel.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_accel.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb_accelerator
+
+Top level modules:
+	apb_accelerator
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/floating_point_unit.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/floating_point_unit.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module fpu_unit
+
+Top level modules:
+	fpu_unit
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/axi4_master_wr.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/axi4_master_wr.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi4_master_wr
+
+Top level modules:
+	axi4_master_wr
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_regmap.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic_regmap.sv
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module rv_plic_regmap
+-- Importing package tlul_pkg
+-- Importing package top_pkg
+
+Top level modules:
+	rv_plic_regmap
+
+} {} {}} D:/ModelSim/Project/SoC_merge/rtl/peripheral/apb_ascon/apb_ascon.v {1 {vlog -work work -vopt -stats=none D:/ModelSim/Project/SoC_merge/rtl/peripheral/apb_ascon/apb_ascon.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb_ascon
+
+Top level modules:
+	apb_ascon
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/UART_RX.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/UART_RX.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module uart_rx
+
+Top level modules:
+	uart_rx
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/sync_fifo.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/sync_fifo.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module sync_fifo
+
+Top level modules:
+	sync_fifo
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/prim_utils.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/DMA/prim_utils.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module shift_reg
+-- Compiling module timeout_cnt
+-- Compiling module onehot_mux
+-- Compiling module rr_arbiter
+
+Top level modules:
+	shift_reg
+	timeout_cnt
+	onehot_mux
+	rr_arbiter
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/splitting_4kb_masker.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_interconnect/utils/splitting_4kb_masker.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module splitting_4kb_masker
+
+Top level modules:
+	splitting_4kb_masker
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_timer.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_timer.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb_timer
+
+Top level modules:
+	apb_timer
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/debug/rv_jtag_dtm.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/debug/rv_jtag_dtm.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module rv_jtag_dtm
+
+Top level modules:
+	rv_jtag_dtm
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/apb_interconnect.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/apb_interconnect.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb4_interconnect_std
+
+Top level modules:
+	apb4_interconnect_std
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/top_soc.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/top_soc.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module top_soc
+
+Top level modules:
+	top_soc
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/common/async_fifo.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/common/async_fifo.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module async_fifo
+-- Compiling module async_fifo_cdc
+
+Top level modules:
+	async_fifo
+	async_fifo_cdc
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/FIFO.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_uart/FIFO.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module asyn_fifo
+
+Top level modules:
+	asyn_fifo
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_gpio.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/peripheral/apb_gpio.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module apb_gpio
+
+Top level modules:
+	apb_gpio
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/interrupt/PLIC/rv_plic.sv
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module rv_plic
+-- Importing package tlul_pkg
+-- Importing package top_pkg
+
+Top level modules:
+	rv_plic
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/pipeline_control_unit.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/pipeline_control_unit.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module pipeline_control_unit
+
+Top level modules:
+	pipeline_control_unit
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/branch_prediction_unit.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/core/block_unit/branch_prediction_unit.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module branch_prediction_unit
+-- Compiling module branch_target_buffer
+-- Compiling module branch_history_table
+
+Top level modules:
+	branch_prediction_unit
+
+} {} {}} C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_master_adapter.v {1 {vlog -work work -vopt -stats=none C:/Users/Windows/Downloads/SoC-8a4033b10173672857859625f17082ff68369122/SoC-8a4033b10173672857859625f17082ff68369122/rtl/bus/axi_master_adapter.v
+Model Technology ModelSim SE-64 vlog 10.6d Compiler 2018.02 Feb 24 2018
+-- Compiling module axi_master_adapter
+
+Top level modules:
+	axi_master_adapter
+
+} {} {}}

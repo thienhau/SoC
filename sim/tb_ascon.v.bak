@@ -1,0 +1,125 @@
+`timescale 1ns/1ps
+
+module ascon_core_tb;
+
+    // 1. Signal Declarations (Verilog-2001 syntax)
+    reg          clk;
+    reg          rst;
+    reg          start;
+    reg          mode;
+    reg  [127:0] key_in;
+    reg  [127:0] nonce_in;
+    reg  [63:0]  data_in;
+
+    wire         ready;
+    wire         done;
+    wire [63:0]  data_out;
+    wire [127:0] tag_out;
+
+    // 2. Clock Generation (100MHz)
+    initial begin
+        clk = 0;
+        forever #5 clk = ~clk;
+    end
+
+    // 3. DUT Instantiation (Device Under Test)
+    ascon_core dut (
+        .clk(clk),
+        .rst_n(rst_n),
+        .start(start),
+        .mode(mode),
+        .key_in(key_in),
+        .nonce_in(nonce_in),
+        .data_in(data_in),
+        .ready(ready),
+        .done(done),
+        .data_out(data_out),
+        .tag_out(tag_out)
+    );
+
+    // 4. Test Scenario (Based on Msg 3 from test_vectors.txt)
+    initial begin
+        // Initialize inputs & Reset system
+        rst = 1;
+        start = 0;
+        mode = 0; // 0 for AEAD mode
+        data_in = 64'h0;
+        key_in = 128'h0;
+        nonce_in = 128'h0;
+        
+        #20 rst = 0;
+        #10;
+
+        $display("-----------------------------------------");
+        $display("--- STARTING ASCON AEAD TEST: Msg 3 ---");
+        $display("-----------------------------------------");
+
+        // STEP 1: Initialization Phase
+        // Values extracted from[cite: 2]
+        key_in   = 128'hB970673790D6189480658A26F1153990;
+        nonce_in = 128'h80DD699040345DF48EF8551F6EAFF74B;
+        
+        // Trigger Start pulse
+        start = 1;
+        #10 start = 0; 
+
+        // Wait for the initialization phase to complete
+        wait(ready == 1'b1);
+        $display("[%0t] Initialization complete! Injecting Associated Data (AD)...", $time);
+
+        // STEP 2: Inject Associated Data (AD)
+        // AD from Msg 3: BF7977FA96AE8D19 162305B8E9390A0D 426547A3F2D74325[cite: 2]
+        
+        // AD Block 1
+        data_in = 64'hBF7977FA96AE8D19;
+        #10; wait(ready == 1'b1);
+        
+        // AD Block 2
+        data_in = 64'h162305B8E9390A0D;
+        #10; wait(ready == 1'b1);
+
+        // AD Block 3 
+        // Note: Full 64-bit block, requires a new block for padding 10...0
+        data_in = 64'h426547A3F2D74325;
+        #10; wait(ready == 1'b1);
+        
+        // Final padded block for AD: Appending '1' followed by '0's
+        data_in = 64'h8000000000000000;
+        #10; wait(ready == 1'b1);
+        
+        $display("[%0t] AD injection complete! Injecting Plaintext (PT)...", $time);
+
+        // STEP 3: Inject Plaintext (PT) and capture Ciphertext (CT)
+        // PT from Msg 3: 712A8602CA9B115B DFFF23E20DB024BE 60E408368DC7E4[cite: 2]
+        
+        // PT Block 1
+        data_in = 64'h712A8602CA9B115B;
+        #10; wait(ready == 1'b1);
+        $display("[%0t] CT Block 1: %h (Expected: d261e5ece87e069d)", $time, data_out);
+
+        // PT Block 2
+        data_in = 64'hDFFF23E20DB024BE;
+        #10; wait(ready == 1'b1);
+        $display("[%0t] CT Block 2: %h (Expected: 4a7d4aabfad859b7)", $time, data_out);
+
+        // PT Block 3 (Partial block: 60E408368DC7E4 -> Padded to 60E408368DC7E480)
+        data_in = 64'h60E408368DC7E480;
+        #10; 
+
+        // STEP 4: Finalization - Wait for 'done' flag and verify TAG
+        wait(done == 1'b1);
+        $display("[%0t] CT Block 3: %h (Expected: 13d1d33c4af564)", $time, data_out);
+        $display("[%0t] Processing complete! Extracted TAG = %h", $time, tag_out);
+        
+        // Compare with the expected Tag[cite: 2]
+        $display("-----------------------------------------");
+        if (tag_out == 128'hD6C6D05E763D136BEFAF007008582726)
+            $display("=> TEST RESULT: PASS!");
+        else
+            $display("=> TEST RESULT: FAIL!");
+        $display("-----------------------------------------");
+
+        #50 $finish;
+    end
+
+endmodule
